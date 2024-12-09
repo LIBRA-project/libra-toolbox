@@ -22,3 +22,6 @@ tests = ["pytest>=5.4.3", "pytest-cov", "nbconvert", "ipykernel"]
 
 [tool.setuptools_scm]
 write_to = "libra_toolbox/_version.py"
+
+[tool.setuptools.package-data]
+mvng_source = ["libra_toolbox/neutronics/neutron_source_diamond.h5"]

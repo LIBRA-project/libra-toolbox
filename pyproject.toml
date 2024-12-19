@@ -15,9 +15,10 @@ description = "Design and analysis tools for LIBRA project"
 license = {file = "LICENSE"}
 requires-python = ">=3.6"
 dynamic = ["version"]
-dependencies = ["numpy", "pint", "scipy", "matplotlib", "sympy", "pandas", "openmc>=0.14.0", "h5py"]
+dependencies = ["numpy", "pint", "scipy", "matplotlib", "sympy", "pandas"]
 
 [project.optional-dependencies]
+neutronics = ["openmc>=0.14.0", "h5py"]
 tests = ["pytest>=5.4.3", "pytest-cov", "nbconvert", "ipykernel"]
 
 [tool.setuptools_scm]

@@ -21,6 +21,20 @@ To install a specific version of the code:
 
 Here, ``v0.1`` is the version number. You can replace it with the version you want to install.
 
+To install the code in editable mode (i.e. the code is installed in the current directory and any changes to the code are immediately available to the user):
+
+.. code-block:: bash
+
+   git clone https://github.com/LIBRA-project/libra-toolbox
+   cd libra-toolbox
+   pip install -e .
+
+To install the code alongside with the optional dependencies for the neutronics module, first [install OpenMC](https://docs.openmc.org/en/stable/quickinstall.html) with conda:
+
+```
+conda install -c conda-forge openmc>=0.14.0
+```
+
 To uninstall the package:
 
 .. code-block:: bash

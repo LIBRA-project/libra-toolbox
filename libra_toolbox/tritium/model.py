@@ -222,7 +222,7 @@ class Model:
 
         for irr in self.irradiations:
             t0 = irr[0]
-            tf = irr[1]
+            tf = min(irr[1], t_final)
 
             if previous_tf is not None:
                 time_intervals.append((previous_tf, t0))

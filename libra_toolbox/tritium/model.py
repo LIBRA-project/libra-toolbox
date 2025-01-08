@@ -5,6 +5,8 @@ from scipy.integrate import solve_ivp
 
 from libra_toolbox.tritium import ureg
 
+from typing import Callable
+
 SPECIFIC_ACT = 3.57e14 * ureg.Bq * ureg.g**-1
 MOLAR_MASS = 6.032 / 2 * ureg.g * ureg.mol**-1
 
@@ -70,8 +72,8 @@ class Model:
         height: pint.Quantity,
         TBR: pint.Quantity,
         neutron_rate: pint.Quantity,
-        k_wall: pint.Quantity,
-        k_top: pint.Quantity,
+        k_wall: pint.Quantity | Callable[[pint.Quantity], pint.Quantity],
+        k_top: pint.Quantity | Callable[[pint.Quantity], pint.Quantity],
         irradiations: list,
     ) -> None:
 
@@ -154,7 +156,7 @@ class Model:
                 return self.TBR * self.neutron_rate
         return 0 * self.TBR * self.neutron_rate
 
-    def Q_wall(self, c_salt):
+    def Q_wall(self, t, c_salt):
         """
         Calculate the release rate of tritium through the wall.
 
@@ -167,10 +169,13 @@ class Model:
         Returns:
             pint.Quantity: The release rate of tritium through the wall.
         """
+        if callable(self.k_wall):
+            k_wall = self.k_wall(t)
+        else:
+            k_wall = self.k_wall
+        return self.A_wall * k_wall * c_salt
 
-        return self.A_wall * self.k_wall * c_salt
-
-    def Q_top(self, c_salt):
+    def Q_top(self, t, c_salt):
         """
         Calculate the release rate of tritium through the top surface of the salt.
 
@@ -183,7 +188,11 @@ class Model:
         Returns:
             pint.Quantity: The release rate of tritium through the top.
         """
-        return self.A_top * self.k_top * c_salt
+        if callable(self.k_top):
+            k_top = self.k_top(t)
+        else:
+            k_top = self.k_top
+        return self.A_top * k_top * c_salt
 
     def rhs(self, t, c):
         """
@@ -201,8 +210,8 @@ class Model:
 
         return self.volume.to(ureg.m**3) ** -1 * (
             self.source(t).to(ureg.particle * ureg.s**-1)
-            - self.Q_wall(c).to(ureg.particle * ureg.s**-1)
-            - self.Q_top(c).to(ureg.particle * ureg.s**-1)
+            - self.Q_wall(t, c).to(ureg.particle * ureg.s**-1)
+            - self.Q_top(t, c).to(ureg.particle * ureg.s**-1)
         )
 
     def _generate_time_intervals(self, t_final):
@@ -287,7 +296,7 @@ class Model:
             ndarray: array with units same size as the number of time steps,
             the integrated release of tritium through the top surface.
         """
-        top_release = self.Q_top(self.concentrations)
+        top_release = self.Q_top(t=self.times, c_salt=self.concentrations)
         integrated_top = cumulative_trapezoid(
             top_release.to(ureg.particle * ureg.h**-1).magnitude,
             self.times.to(ureg.h).magnitude,
@@ -304,7 +313,7 @@ class Model:
             ndarray: array with units same size as the number of time steps,
             the integrated release of tritium through the walls.
         """
-        wall_release = self.Q_wall(self.concentrations)
+        wall_release = self.Q_wall(t=self.times, c_salt=self.concentrations)
         integrated_wall = cumulative_trapezoid(
             wall_release.to(ureg.particle * ureg.h**-1).magnitude,
             self.times.to(ureg.h).magnitude,

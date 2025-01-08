@@ -285,14 +285,14 @@ def plot_salt_inventory(model: Model, **kwargs):
 
 
 def plot_top_release(model: Model, **kwargs):
-    top_release = model.Q_top(model.concentrations)
+    top_release = model.Q_top(t=model.times, c_salt=model.concentrations)
     top_release = quantity_to_activity(top_release).to(ureg.Bq * ureg.h**-1)
     l = plt.plot(model.times.to(ureg.day), top_release, **kwargs)
     return l
 
 
 def plot_wall_release(model: Model, **kwargs):
-    wall_release = model.Q_wall(model.concentrations)
+    wall_release = model.Q_wall(t=model.times, c_salt=model.concentrations)
     wall_release = quantity_to_activity(wall_release).to(ureg.Bq * ureg.h**-1)
     l = plt.plot(model.times.to(ureg.day), wall_release, **kwargs)
     return l

@@ -1,4 +1,4 @@
-from settings import *
+from .settings import *
 # from .calculations import n93_number, delay_time
 import numpy as np
 import pandas as pd

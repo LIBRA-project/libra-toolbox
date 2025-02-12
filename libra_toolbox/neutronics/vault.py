@@ -53,7 +53,10 @@ def build_vault_model(
     try:
         import openmc
         import openmc.model
-        import openmc_data_downloader as odd
+        import os
+
+        if "OPENMC_CROSS_SECTIONS" not in os.environ:
+            import openmc_data_downloader as odd
     except ModuleNotFoundError:
         raise ModuleNotFoundError("openmc and openmc_data_downloader are required.")
 
@@ -91,11 +94,12 @@ def build_vault_model(
     # Add materials from imported model
     materials += added_materials
 
-    materials.download_cross_section_data(
-        libraries=["ENDFB-8.0-NNDC"],
-        set_OPENMC_CROSS_SECTIONS=True,
-        particles=["neutron"],
-    )
+    if "OPENMC_CROSS_SECTIONS" not in os.environ:
+        materials.download_cross_section_data(
+            libraries=["ENDFB-8.0-NNDC"],
+            set_OPENMC_CROSS_SECTIONS=True,
+            particles=["neutron"],
+        )
     #
     # Definition of the spherical void/blackhole boundary
     Surface_95 = openmc.Sphere(x0=0.0, y0=0.0, z0=0.0, r=2500.0, boundary_type="vacuum")

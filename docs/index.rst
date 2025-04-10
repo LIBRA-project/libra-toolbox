@@ -34,7 +34,7 @@ To install libra-toolbox, use pip:
 
 .. code-block:: bash
 
-   pip install git+https://github.com/LIBRA-project/libra-toolbox
+   pip install libra-toolbox
 
 For more details, see the :ref:`installation` page.
 
@@ -45,9 +45,10 @@ Roadmap
 
 - :strike:`Tritium model: 0D model for tritium release`
 - :strike:`Neutron detection: tools and scripts for neutron detection post processing`
-- Neutronics: tools to facilitate building `OpenMC <https://docs.openmc.org/en/stable/>`_ models
+- :strike:`Neutronics: tools to facilitate building OpenMC models`
 - Tritium transport: tools to facilitate building `FESTIM <https://github.com/festim-dev/festim>`_ tritium transport models
 - :strike:`Code coverage with Codecov`
+- Conda package
 
 
 .. toctree::

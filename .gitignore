@@ -162,3 +162,7 @@ cython_debug/
 #.idea/
 
 **/_version.py
+
+# Compass binary file
+*.DS_Store
+settings.xml

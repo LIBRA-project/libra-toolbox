@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import List
+from datetime import datetime
 
 
 @dataclass
@@ -55,3 +56,15 @@ mn54 = Nuclide(
     intensity=[0.99976],
     half_life=312.20 * 24 * 3600,
 )
+
+
+@dataclass
+class CheckSource:
+    nuclide: Nuclide
+    activity_date: datetime.date
+    activity: float
+
+
+class ActivationFoil:
+    nuclide: Nuclide
+    mass: float

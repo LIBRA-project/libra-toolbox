@@ -2,6 +2,10 @@ import pytest
 import numpy as np
 import os
 from libra_toolbox.neutron_detection.activation_foils import compass
+from libra_toolbox.neutron_detection.activation_foils.calibration import (
+    Nuclide,
+    CheckSource,
+)
 from pathlib import Path
 import datetime
 
@@ -331,3 +335,411 @@ def test_detector_get_energy_hist(bins):
     )
 
     my_detector.get_energy_hist(bins=bins)
+
+
+@pytest.mark.parametrize(
+    "counting_time_background",
+    [
+        10,
+        100,
+        1000,
+        3000,
+    ],
+)
+def test_background_sub(counting_time_background):
+    """
+    Test the background subtraction method of the Detector class.
+    Builds a test case with a background measurement and a measured foil measurement,
+    then checks that the background is correctly subtracted from the measured spectrum.
+
+    Also checks that the result is independent of the counting time of the background measurement.
+    """
+    # BUILD
+
+    def background_spectrum(energies):
+        return np.ones_like(energies)
+
+    def measured_spectrum(energies):
+        return np.cos(energies / 10) + 10
+
+    counting_time_measured = 200
+
+    background_rate = 300000 / (3600)
+    measurement_rate = 3 * background_rate
+
+    nb_events_background = int(background_rate * counting_time_background)
+    nb_events_measured = int(measurement_rate * counting_time_measured)
+    nb_events_measured_bg_contrib = int(background_rate * counting_time_measured)
+
+    # Define energy grid for sampling
+    energy_grid = np.arange(100)
+
+    # Calculate probability distributions using the spectrum functions
+    bg_probabilities = background_spectrum(energy_grid)
+    bg_probabilities = bg_probabilities / np.sum(bg_probabilities)  # Normalize
+    measured_probabilities = measured_spectrum(energy_grid)
+    measured_probabilities = measured_probabilities / np.sum(
+        measured_probabilities
+    )  # Normalize
+
+    # Sample from these distributions
+    energy_events_bg = np.random.choice(
+        energy_grid, size=nb_events_background, p=bg_probabilities
+    )
+    energy_events_measured = np.random.choice(
+        energy_grid, size=nb_events_measured, p=measured_probabilities
+    )
+    energy_events_measured_bg_contrib = np.random.choice(
+        energy_grid, size=nb_events_measured_bg_contrib, p=bg_probabilities
+    )
+
+    energy_events_measured = np.concatenate(
+        (energy_events_measured, energy_events_measured_bg_contrib)
+    )
+
+    # Create the measurement objects
+    ps_to_seconds = 1e-12
+
+    measurement = compass.Measurement("test")
+    detector_meas = compass.Detector(channel_nb=1)
+    detector_meas.real_count_time = counting_time_measured
+    measurement.detectors = [detector_meas]
+    time_events_measured = np.random.uniform(
+        0, counting_time_measured, nb_events_measured + nb_events_measured_bg_contrib
+    )
+    time_events_measured *= 1 / ps_to_seconds
+    time_events_measured.sort()
+    detector_meas.events = np.column_stack(
+        (time_events_measured, energy_events_measured)
+    )
+
+    background_measurment = compass.Measurement("background")
+    background_detector = compass.Detector(channel_nb=1)
+    background_detector.real_count_time = counting_time_background
+    background_measurment.detectors = [background_detector]
+    background_time_events = np.random.uniform(
+        0, counting_time_background, nb_events_background
+    )
+    background_time_events *= 1 / ps_to_seconds
+    background_time_events.sort()
+    background_detector.events = np.column_stack(
+        (background_time_events, energy_events_bg)
+    )
+
+    # RUN
+    computed_hist, _ = detector_meas.get_energy_hist_background_substract(
+        background_detector=background_detector
+    )
+
+    # TEST
+    hist_bg, _ = background_detector.get_energy_hist()
+    hist_raw, _ = detector_meas.get_energy_hist()
+    expected_hist = (
+        hist_raw - hist_bg / counting_time_background * counting_time_measured
+    )
+    assert np.allclose(computed_hist, expected_hist, rtol=1e-1)
+
+
+@pytest.mark.parametrize(
+    "activity_date",
+    [
+        datetime.datetime(2024, 11, 7),
+        datetime.date(2024, 11, 7),
+    ],
+)
+@pytest.mark.parametrize("n_half_lives", [0, 1, 2, 3, 4, 5])
+def test_check_source_expected_activity(n_half_lives, activity_date):
+    """
+    Test the expected activity of a check source.
+    """
+    # BUILD
+    half_life = 10 * 24 * 3600  # seconds  (10 days)
+    activity = 500  # Bq
+
+    test_nuclide = Nuclide(
+        name="TestNuclide",
+        energy=[100, 200],
+        intensity=[0.5, 0.5],
+        half_life=half_life,
+    )
+
+    check_source = CheckSource(
+        nuclide=test_nuclide,
+        activity_date=activity_date,
+        activity=activity,
+    )
+
+    measurement = compass.CheckSourceMeasurement(name="test measurement")
+    measurement.check_source = check_source
+    measurement.start_time = activity_date + datetime.timedelta(
+        seconds=n_half_lives * half_life
+    )
+    measurement.stop_time = measurement.start_time + datetime.timedelta(hours=1)
+
+    # convert start_time and stop_time to datetime
+    if isinstance(measurement.start_time, datetime.date):
+        measurement.start_time = datetime.datetime.combine(
+            measurement.start_time, datetime.datetime.min.time()
+        )
+
+    # RUN
+    computed_activity = measurement.get_expected_activity()
+
+    # TEST
+
+    expected_activity = activity / (2**n_half_lives)
+    assert np.isclose(computed_activity, expected_activity, rtol=1e-2)
+
+
+@pytest.mark.parametrize("expected_efficiency", [1e-2, 0.5, 1])
+def test_check_source_detection_efficiency(expected_efficiency):
+    """
+    Test the detection efficiency of a check source measurement.
+    Generates a test case with a known detection efficiency and checks that the
+    computed efficiency is close to the expected one.
+
+    Using a Mn54 source with an energy of 834.848 keV and an intensity of 1.0.
+    We generate some events with a normal distribution centered on the energy of the source.
+    The number of events is given by the expected efficiency, the activity of the source,
+    the measurement time, and the number of half-lives passed since the activity date.
+    """
+    # BUILD
+
+    ps_to_seconds = 1e-12
+
+    n_half_lives = 0
+
+    activity_date = datetime.datetime(2024, 11, 7)
+    half_life = 10 * 24 * 3600  # seconds  (10 days)
+    activity = 1000e1  # Bq
+
+    test_nuclide = Nuclide(
+        name="TestNuclide Mn54",
+        energy=[834.848],
+        intensity=[1.0],
+        half_life=half_life,
+    )
+
+    check_source = CheckSource(
+        nuclide=test_nuclide,
+        activity_date=activity_date,
+        activity=activity,
+    )
+
+    measurement = compass.CheckSourceMeasurement(name="test measurement")
+    measurement.check_source = check_source
+    measurement.start_time = activity_date + datetime.timedelta(
+        seconds=n_half_lives * half_life
+    )
+    measurement.stop_time = measurement.start_time + datetime.timedelta(seconds=100)
+    measurement_time = (measurement.stop_time - measurement.start_time).total_seconds()
+
+    # generate the spectrum which is a normal centered on energy
+    nb_events_measured = (
+        expected_efficiency * activity / (2**n_half_lives) * measurement_time
+    )
+    energy_events = np.random.normal(
+        loc=test_nuclide.energy[0],
+        scale=20,
+        size=int(nb_events_measured),
+    )
+    # make sure the min and max are in the range of the detector
+    energy_events[0] = 1
+    energy_events[-1] = 3000
+    time_events = np.random.uniform(
+        0,
+        measurement_time,
+        size=int(nb_events_measured),
+    )
+    time_events *= 1 / ps_to_seconds
+    time_events.sort()
+
+    detector_meas = compass.Detector(channel_nb=1)
+    detector_meas.events = np.column_stack((time_events, energy_events))
+    detector_meas.real_count_time = measurement_time
+    detector_meas.live_count_time = detector_meas.real_count_time
+    measurement.detectors = [detector_meas]
+
+    background_measurement = compass.Measurement("background")
+    bg_detector = compass.Detector(channel_nb=1)
+    bg_detector.real_count_time = 0.5
+    background_measurement.detectors = [bg_detector]
+
+    # RUN
+    computed_efficiency = measurement.compute_detection_efficiency(
+        background_measurement,
+        calibration_coeffs=[1.0, 0.0],  # assume perfect calibration
+        channel_nb=1,
+    )
+
+    # TEST
+    assert np.isclose(computed_efficiency, expected_efficiency, rtol=1e-2)
+
+
+@pytest.mark.parametrize(
+    "a, b",
+    [
+        (1.5, 200),
+        (1, 0),
+        (2, 600),
+    ],
+)
+def test_get_calibration_data(a, b):
+    """
+    Test the get_calibration_data function from the compass module.
+    Checks that the calibration data is correctly computed from the measurements.
+
+    The test generates a set of measurements with known energies and intensities,
+    and checks that the computed calibration data matches the expected values.
+    The energies counts (channels) are generated using a linear function with parameters a and b.
+    """
+    # BUILD
+    channel_nb = 1
+    nb_events_measured = 60000
+    measurements = []
+    real_energies = np.array([800, 1300, 1800])
+    energy_channels = a * real_energies + b
+    for real_energy, energy_channel in zip(
+        real_energies,
+        energy_channels,
+    ):
+        test_nuclide = Nuclide(
+            name="TestNuclide",
+            energy=[real_energy],
+            intensity=[1.0],
+            half_life=10000,
+        )
+        check_source = CheckSource(
+            nuclide=test_nuclide,
+            activity_date=datetime.datetime(2024, 11, 7),
+            activity=5000,
+        )
+
+        # create CheckSourceMeasurement
+        measurement = compass.CheckSourceMeasurement(name="test measurement")
+        measurement.check_source = check_source
+        measurement.start_time = datetime.datetime(2024, 11, 7)
+        detector = compass.Detector(channel_nb=channel_nb)
+        energy_events = np.random.normal(
+            loc=energy_channel, scale=30, size=int(nb_events_measured)
+        )
+
+        # make sure the min and max are in the range of the detector
+        energy_events[0] = 1
+        energy_events[-1] = 3000
+
+        time_events = np.random.uniform(0, 100, size=int(nb_events_measured))
+        detector.events = np.column_stack((time_events, energy_events))
+        detector.real_count_time = 100
+        measurement.detectors = [detector]
+
+        measurements.append(measurement)
+
+    # create background measurement
+    background_measurement = compass.Measurement("background")
+    bg_detector = compass.Detector(channel_nb=channel_nb)
+    bg_detector.real_count_time = 100
+    background_measurement.detectors = [bg_detector]
+
+    # RUN
+    calibration_channels, calibration_energies = compass.get_calibration_data(
+        measurements, background_measurement, channel_nb=channel_nb
+    )
+
+    # TEST
+    assert np.allclose(calibration_channels, energy_channels, rtol=1e-2)
+    assert np.allclose(calibration_energies, real_energies, rtol=1e-2)
+
+
+def test_get_multipeak_area_single_peak():
+    """
+    Test the get_multipeak_area function from the compass module.
+    Checks that the area under the peaks is correctly computed.
+    """
+    # BUILD
+    energy = 2000
+    nb_events_measured = 60000
+    energy_events = np.random.normal(loc=energy, scale=30, size=int(nb_events_measured))
+    # make sure the min and max are in the range of the detector
+    energy_events[0] = 1
+    energy_events[-1] = 3000
+
+    hist, bin_edges = np.histogram(energy_events, bins=np.arange(0, 3000))
+
+    # RUN
+    areas = compass.get_multipeak_area(hist, bin_edges, peak_ergs=[energy])
+
+    # TEST
+    expected_area = np.sum(hist)
+    assert np.isclose(areas[0], expected_area, rtol=1e-2)
+
+
+def test_get_multipeak_area_two_separated_peaks():
+    """
+    Test the get_multipeak_area function from the compass module.
+    Checks that the area under the peaks is correctly computed.
+    """
+    # BUILD
+    energy1 = 1000
+    energy2 = 2000
+    energy_events = np.empty((0,))
+    nb_events_peak1 = 60000
+    nb_events_peak2 = 2 * nb_events_peak1
+    sigma_peak = 30
+    for energy, nb_events in zip(
+        [energy1, energy2], [nb_events_peak1, nb_events_peak2]
+    ):
+        new_energy_events = np.random.normal(
+            loc=energy, scale=sigma_peak, size=int(nb_events)
+        )
+        # make sure the min and max are in the range of the detector
+        new_energy_events[0] = 1
+        new_energy_events[-1] = 3000
+        energy_events = np.concatenate((energy_events, new_energy_events))
+
+    hist, bin_edges = np.histogram(energy_events, bins=np.arange(0, 3000))
+
+    # RUN
+    areas = compass.get_multipeak_area(hist, bin_edges, peak_ergs=[energy1, energy2])
+
+    # TEST
+
+    expected_area_peak_1 = nb_events_peak1
+    expected_area_peak_2 = nb_events_peak2
+    for i, expected_area in enumerate([expected_area_peak_1, expected_area_peak_2]):
+        assert np.isclose(areas[i], expected_area, rtol=1e-2)
+
+
+def test_get_multipeak_area_two_close_peaks():
+    """
+    Test the get_multipeak_area function from the compass module.
+    Checks that the area under the peaks is correctly computed.
+    """
+    # BUILD
+    energy1 = 1000
+    energy2 = 1100
+    energy_events = np.empty((0,))
+    nb_events_peak1 = 1300000
+    nb_events_peak2 = 0.6 * nb_events_peak1
+    sigma_peak = 30
+    for energy, nb_events in zip(
+        [energy1, energy2], [nb_events_peak1, nb_events_peak2]
+    ):
+        new_energy_events = np.random.normal(
+            loc=energy, scale=sigma_peak, size=int(nb_events)
+        )
+        # make sure the min and max are in the range of the detector
+        new_energy_events[0] = 1
+        new_energy_events[-1] = 3000
+        energy_events = np.concatenate((energy_events, new_energy_events))
+
+    hist, bin_edges = np.histogram(energy_events, bins=np.arange(0, 3000))
+
+    # RUN
+    areas = compass.get_multipeak_area(hist, bin_edges, peak_ergs=[energy1, energy2])
+
+    # TEST
+    expected_area_peak_1 = nb_events_peak1
+    expected_area_peak_2 = nb_events_peak2
+    for i, expected_area in enumerate([expected_area_peak_1, expected_area_peak_2]):
+        assert np.isclose(areas[i], expected_area, rtol=1e-2)

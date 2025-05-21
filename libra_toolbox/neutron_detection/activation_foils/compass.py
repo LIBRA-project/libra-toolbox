@@ -323,26 +323,26 @@ class CheckSourceMeasurement(Measurement):
             the peak indices in ``hist``
         """
 
-        # peak finding parameters
-        start_index = 100
-        prominence = 0.10 * np.max(hist[start_index:])
-        height = 0.10 * np.max(hist[start_index:])
-        width = [10, 150]
-        distance = 30
-        if self.check_source.nuclide == na22:
-            start_index = 100
-            height = 0.1 * np.max(hist[start_index:])
-            prominence = 0.1 * np.max(hist[start_index:])
-            width = [10, 150]
-            distance = 30
-        elif self.check_source.nuclide == co60:
-            start_index = 400
-            height = 0.60 * np.max(hist[start_index:])
+        nuclide_peak_prms = self.check_source.nuclide.peak_finding_prms
+
+        # NOTE: the start_index is used to ignore the low energy region
+        start_index = kwargs.get("start_index", None)
+        if start_index is None:
+            start_index = nuclide_peak_prms.get("start_index", 100)
+
+        hist_trunc = hist.copy()[start_index:]
+
+        rel_prominence = nuclide_peak_prms.get("prominence_rel", None)
+        if rel_prominence is None:
             prominence = None
-        elif self.check_source.nuclide == ba133:
-            width = [10, 200]
-        elif self.check_source.nuclide == mn54:
-            height = 0.6 * np.max(hist[start_index:])
+        else:
+            prominence = rel_prominence * np.max(hist_trunc)
+
+        rel_height = nuclide_peak_prms.get("height_rel", 0.1)
+        height = rel_height * np.max(hist_trunc)
+
+        width = nuclide_peak_prms.get("width", None)
+        distance = nuclide_peak_prms.get("distance", None)
 
         # update the parameters if kwargs are provided
         if kwargs:
@@ -352,9 +352,8 @@ class CheckSourceMeasurement(Measurement):
             distance = kwargs.get("distance", distance)
 
         # run the peak finding algorithm
-        # NOTE: the start_index is used to ignore the low energy region
         peaks, peak_data = find_peaks(
-            hist[start_index:],
+            hist_trunc,
             prominence=prominence,
             height=height,
             width=width,
@@ -404,59 +403,6 @@ class SampleMeasurement(Measurement):
         gamma_emmitted = nb_counts_measured / detection_efficiency
         gamma_emmitted_err = nb_counts_measured_err / detection_efficiency
         return gamma_emmitted, gamma_emmitted_err
-
-    def get_peaks(self, hist: np.ndarray, **kwargs) -> np.ndarray:
-        """Returns the peak indices of the histogram
-
-        Args:
-            hist: a histogram
-            kwargs: optional parameters for the peak finding algorithm
-                see scipy.signal.find_peaks for more information
-
-        Returns:
-            the peak indices in ``hist``
-        """
-
-        # peak finding parameters
-        start_index = 100
-        prominence = 0.10 * np.max(hist[start_index:])
-        height = 0.10 * np.max(hist[start_index:])
-        width = [10, 150]
-        distance = 30
-        if self.foil.nuclide == na22:
-            start_index = 100
-            height = 0.1 * np.max(hist[start_index:])
-            prominence = 0.1 * np.max(hist[start_index:])
-            width = [10, 150]
-            distance = 30
-        elif self.foil.nuclide == co60:
-            start_index = 400
-            height = 0.60 * np.max(hist[start_index:])
-            prominence = None
-        elif self.foil.nuclide == ba133:
-            width = [10, 200]
-        elif self.foil.nuclide == mn54:
-            height = 0.6 * np.max(hist[start_index:])
-
-        # update the parameters if kwargs are provided
-        if kwargs:
-            prominence = kwargs.get("prominence", prominence)
-            height = kwargs.get("height", height)
-            width = kwargs.get("width", width)
-            distance = kwargs.get("distance", distance)
-
-        # run the peak finding algorithm
-        # NOTE: the start_index is used to ignore the low energy region
-        peaks, peak_data = find_peaks(
-            hist[start_index:],
-            prominence=prominence,
-            height=height,
-            width=width,
-            distance=distance,
-        )
-        peaks = np.array(peaks) + start_index
-
-        return peaks
 
     def get_neutron_rate(
         self,

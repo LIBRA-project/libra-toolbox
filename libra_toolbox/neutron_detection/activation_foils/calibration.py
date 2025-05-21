@@ -26,6 +26,11 @@ class Nuclide:
     intensity: List[float] = None
     half_life: float = None
     atomic_mass: float = None
+    peak_finding_prms: dict = None
+
+    def __post_init__(self):
+        if self.peak_finding_prms is None:
+            self.peak_finding_prms = {}
 
     @property
     def decay_constant(self):
@@ -40,18 +45,38 @@ ba133 = Nuclide(
     energy=[80.9979, 276.3989, 302.8508, 356.0129, 383.8485],
     intensity=[0.329, 0.0716, 0.1834, 0.6205, 0.0894],
     half_life=10.551 * 365.25 * 24 * 3600,
+    peak_finding_prms={
+        "start_index": 100,
+        "prominence_rel": 0.1,
+        "height_rel": 0.10,
+        "width": [10, 200],
+        "distance": 30,
+    },
 )
 co60 = Nuclide(
     name="Co60",
     energy=[1173.228, 1332.492],
     intensity=[0.9985, 0.999826],
     half_life=1925.28 * 24 * 3600,
+    peak_finding_prms={
+        "start_index": 400,
+        "height_rel": 0.60,
+        "width": [10, 150],
+        "distance": 30,
+    },
 )
 na22 = Nuclide(
     name="Na22",
     energy=[511, 1274.537],
     intensity=[1.80, 0.9994],
     half_life=2.6018 * 365.25 * 24 * 3600,
+    peak_finding_prms={
+        "start_index": 100,
+        "prominence_rel": 0.1,
+        "height_rel": 0.1,
+        "width": [10, 150],
+        "distance": 30,
+    },
 )
 cs137 = Nuclide(
     name="Cs137",
@@ -64,6 +89,13 @@ mn54 = Nuclide(
     energy=[834.848],
     intensity=[0.99976],
     half_life=312.20 * 24 * 3600,
+    peak_finding_prms={
+        "start_index": 100,
+        "prominence_rel": 0.1,
+        "height_rel": 0.60,
+        "width": [10, 150],
+        "distance": 30,
+    },
 )
 
 nb92m = Nuclide(

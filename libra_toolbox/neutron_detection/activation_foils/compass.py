@@ -7,6 +7,7 @@ from typing import Tuple, Dict, List, Union
 import datetime
 import uproot
 import glob
+import pickle
 
 import warnings
 from libra_toolbox.neutron_detection.activation_foils.calibration import (
@@ -41,6 +42,8 @@ class Detector:
     channel_nb: int
     live_count_time: Union[float, None]
     real_count_time: Union[float, None]
+    _hist: NDArray[np.float64]  # type: ignore
+    _bin_edges: NDArray[np.float64]  # type: ignore
 
     def __init__(self, channel_nb) -> None:
         """
@@ -52,6 +55,15 @@ class Detector:
         self.events = np.empty((0, 2))  # Initialize as empty 2D array with 2 columns
         self.live_count_time = None
         self.real_count_time = None
+
+        self._hist = np.empty(0)
+        self._bin_edges = np.empty(0)
+
+    def __getstate__(self):
+        # This method is called when pickling the object.
+        # We need to exclude the 'events' attribute from the pickling process
+        # see https://stackoverflow.com/questions/6635331/pickle-all-attributes-except-one
+        return {k: v for (k, v) in self.__dict__.items() if k != "events"}
 
     def get_energy_hist(
         self, bins: Union[None, NDArray[np.float64], int, str] = None
@@ -231,6 +243,13 @@ class Measurement:
             if detector.channel_nb == channel_nb:
                 return detector
         raise ValueError(f"Detector with channel number {channel_nb} not found.")
+
+    def to_pickle(self, filename: str) -> None:
+        """
+        Save the measurement object to a pickle file.
+        """
+        with open(filename, "wb") as f:
+            pickle.dump(self, f)
 
 
 class CheckSourceMeasurement(Measurement):

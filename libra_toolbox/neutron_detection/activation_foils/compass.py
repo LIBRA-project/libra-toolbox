@@ -285,12 +285,8 @@ class CheckSourceMeasurement(Measurement):
         """
         # find right background detector
 
-        background_detector = [
-            d for d in background_measurement.detectors if d.channel_nb == channel_nb
-        ][0]
-        check_source_detector = [
-            d for d in self.detectors if d.channel_nb == channel_nb
-        ][0]
+        background_detector = background_measurement.get_detector(channel_nb)
+        check_source_detector = self.get_detector(channel_nb)
 
         hist, bin_edges = check_source_detector.get_energy_hist_background_substract(
             background_detector, bins=None

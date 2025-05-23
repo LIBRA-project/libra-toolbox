@@ -22,9 +22,17 @@ class Nuclide:
     """
 
     name: str
-    energy: List[float]
-    intensity: List[float]
-    half_life: float
+    energy: List[float] = None
+    intensity: List[float] = None
+    half_life: float = None
+    atomic_mass: float = None
+
+    @property
+    def decay_constant(self):
+        """
+        Returns the decay constant of the nuclide in 1/s.
+        """
+        return np.log(2) / self.half_life
 
 
 ba133 = Nuclide(
@@ -58,6 +66,36 @@ mn54 = Nuclide(
     half_life=312.20 * 24 * 3600,
 )
 
+nb92m = Nuclide(
+    name="Nb92m",
+    energy=[934.44],
+    intensity=[0.9915],
+    half_life=10.25 * 24 * 3600,
+)
+
+nb93 = Nuclide(
+    name="Nb93",
+    atomic_mass=92.90637,
+)
+
+
+@dataclass
+class Reaction:
+    reactant: Nuclide
+    product: Nuclide
+    cross_section: float
+    """
+    Class to hold the information of a reaction.
+    Attributes
+    ----------
+    reactant :
+        The reactant of the reaction.
+    product :
+        The product of the reaction.
+    cross_section :
+        The cross section of the reaction in cm2.
+    """
+
 
 @dataclass
 class CheckSource:
@@ -65,7 +103,28 @@ class CheckSource:
     activity_date: datetime.date
     activity: float
 
+    """
+    Class to hold the information of a check source.
+    Attributes
+    ----------
+    nuclide :
+        The nuclide of the check source.
+    activity_date :
+        The date of the calibrated activity of the check source.
+    activity :
+        The activity of the check source in Bq.
+    """
+
     def get_expected_activity(self, date: datetime.date) -> float:
+        """
+        Returns the expected activity of the check source at a given date.
+
+        Args:
+            date: the date to calculate the expected activity for.
+
+        Returns:
+            the expected activity of the check source in Bq
+        """
 
         decay_constant = np.log(2) / self.nuclide.half_life
 
@@ -87,6 +146,31 @@ class CheckSource:
         return act_expec
 
 
+@dataclass
 class ActivationFoil:
-    nuclide: Nuclide
+    reaction: Reaction
     mass: float
+    name: str
+    thickness: float = None
+
+    """Class to hold the information of an activation foil.
+    Attributes
+    ----------
+    reaction :
+        The reaction that produces the nuclide.
+    mass :
+        The mass of the foil in grams.
+    name :
+        The name of the foil.
+    thickness :
+        The thickness of the foil in cm.        
+    """
+
+    @property
+    def nb_atoms(self) -> float:
+        """
+        Returns the number of atoms in the foil.
+        """
+        avogadro = 6.022e23  # part/mol
+        abundance = 1
+        return abundance * (self.mass / self.reaction.reactant.atomic_mass * avogadro)

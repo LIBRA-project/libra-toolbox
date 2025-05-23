@@ -11,11 +11,13 @@ import glob
 import warnings
 from libra_toolbox.neutron_detection.activation_foils.calibration import (
     CheckSource,
+    ActivationFoil,
     na22,
     co60,
     ba133,
     mn54,
 )
+from libra_toolbox.neutron_detection.activation_foils.explicit import get_chain
 
 from scipy.signal import find_peaks
 from scipy.optimize import curve_fit
@@ -77,7 +79,7 @@ class Detector:
 
         if bins is None:
             bins = np.arange(
-                int(np.nanmin(energy_values)), int(np.nanmax(energy_values)) + 1
+                int(np.nanmin(energy_values)), int(np.nanmax(energy_values))
             )
 
         return np.histogram(energy_values, bins=bins)
@@ -217,6 +219,19 @@ class Measurement:
 
         return measurement_object
 
+    def get_detector(self, channel_nb: int) -> Detector:
+        """
+        Get the detector object for a given channel number.
+        Args:
+            channel_nb: channel number of the detector
+        Returns:
+            Detector object for the specified channel
+        """
+        for detector in self.detectors:
+            if detector.channel_nb == channel_nb:
+                return detector
+        raise ValueError(f"Detector with channel number {channel_nb} not found.")
+
 
 class CheckSourceMeasurement(Measurement):
     check_source: CheckSource
@@ -251,12 +266,8 @@ class CheckSourceMeasurement(Measurement):
         """
         # find right background detector
 
-        background_detector = [
-            d for d in background_measurement.detectors if d.channel_nb == channel_nb
-        ][0]
-        check_source_detector = [
-            d for d in self.detectors if d.channel_nb == channel_nb
-        ][0]
+        background_detector = background_measurement.get_detector(channel_nb)
+        check_source_detector = self.get_detector(channel_nb)
 
         hist, bin_edges = check_source_detector.get_energy_hist_background_substract(
             background_detector, bins=None
@@ -273,6 +284,11 @@ class CheckSourceMeasurement(Measurement):
 
         nb_counts_measured = np.array(nb_counts_measured)
         nb_counts_measured_err = np.sqrt(nb_counts_measured)
+
+        # assert that all numbers in nb_counts_measured are > 0
+        assert np.all(
+            nb_counts_measured > 0
+        ), f"Some counts measured are <= 0: {nb_counts_measured}"
 
         act_expec = self.check_source.get_expected_activity(self.start_time)
         gamma_rays_expected = act_expec * (
@@ -350,6 +366,175 @@ class CheckSourceMeasurement(Measurement):
         return peaks
 
 
+class SampleMeasurement(Measurement):
+    foil: ActivationFoil
+
+    def get_gamma_emitted(
+        self,
+        background_measurement: Measurement,
+        efficiency_coeffs,
+        calibration_coeffs,
+        channel_nb: int,
+        search_width: float = 800,
+    ):
+        # find right background detector
+
+        background_detector = background_measurement.get_detector(channel_nb)
+        check_source_detector = self.get_detector(channel_nb)
+
+        hist, bin_edges = check_source_detector.get_energy_hist_background_substract(
+            background_detector, bins=None
+        )
+
+        calibrated_bin_bedges = np.polyval(calibration_coeffs, bin_edges)
+
+        energy = self.foil.reaction.product.energy
+
+        nb_counts_measured = get_multipeak_area(
+            hist,
+            calibrated_bin_bedges,
+            energy,
+            search_width=search_width,
+        )
+
+        nb_counts_measured = np.array(nb_counts_measured)
+        nb_counts_measured_err = np.sqrt(nb_counts_measured)
+
+        detection_efficiency = np.polyval(efficiency_coeffs, energy)
+
+        gamma_emmitted = nb_counts_measured / detection_efficiency
+        gamma_emmitted_err = nb_counts_measured_err / detection_efficiency
+        return gamma_emmitted, gamma_emmitted_err
+
+    def get_neutron_flux(
+        self,
+        channel_nb: int,
+        photon_counts: float,
+        irradiations: list,
+        time_generator_off: datetime.datetime,
+        total_efficiency=1,
+        branching_ratio=1,
+    ):
+        """calculates the neutron flux during the irradiation
+        Based on Equation 1 from:
+        Lee, Dongwon, et al. "Determination of the Deuterium-Tritium (D-T) Generator
+        Neutron Flux using Multi-foil Neutron Activation Analysis Method." ,
+        May. 2019. https://doi.org/10.2172/1524045
+
+        Args:
+            channel_nb: channel number of the detector
+            irradiations: list of dictionaries with keys "t_on" and "t_off" for irradiations
+            time_generator_off: time when the generator was turned off
+            photon_counts: number of gamma rays measured
+            total_efficiency: total efficiency of the detector
+            branching_ratio: branching ratio of the reaction
+
+        Returns:
+            neutron flux in n/cm2/s
+        """
+        time_between_generator_off_and_start_of_counting = (
+            self.start_time - time_generator_off
+        ).total_seconds()
+
+        detector = self.get_detector(channel_nb)
+
+        f_time = (
+            get_chain(irradiations, self.foil.reaction.product.decay_constant)
+            * np.exp(
+                -self.foil.reaction.product.decay_constant
+                * time_between_generator_off_and_start_of_counting
+            )
+            * (
+                1
+                - np.exp(
+                    -self.foil.reaction.product.decay_constant
+                    * detector.real_count_time
+                )
+            )
+            * (detector.live_count_time / detector.real_count_time)
+            / self.foil.reaction.product.decay_constant
+        )
+
+        # Correction factor of gamma-ray self-attenuation in the foil
+        if self.foil.thickness is None:
+            f_self = 1
+        else:
+            f_self = (
+                1
+                - np.exp(
+                    -self.foil.mass_attenuation_coefficient
+                    * self.foil.density
+                    * self.foil.thickness
+                )
+            ) / (
+                self.foil.mass_attenuation_coefficient
+                * self.foil.density
+                * self.foil.thickness
+            )
+
+        # Spectroscopic Factor to account for the branching ratio and the
+        # total detection efficiency
+        f_spec = total_efficiency * branching_ratio
+
+        number_of_decays_measured = photon_counts / f_spec
+
+        flux = (
+            number_of_decays_measured
+            / self.foil.nb_atoms
+            / self.foil.reaction.cross_section
+        )
+
+        flux /= f_time * f_self
+
+        return flux
+
+    def get_neutron_rate(
+        self,
+        channel_nb: int,
+        photon_counts: float,
+        irradiations: list,
+        distance: float,
+        time_generator_off: datetime.datetime,
+        total_efficiency=1,
+        branching_ratio=1,
+    ) -> float:
+        """
+        Calculates the neutron rate during the irradiation.
+        It assumes that the neutron flux is isotropic.
+
+        Based on Equation 1 from:
+        Lee, Dongwon, et al. "Determination of the Deuterium-Tritium (D-T) Generator
+        Neutron Flux using Multi-foil Neutron Activation Analysis Method." ,
+        May. 2019. https://doi.org/10.2172/1524045
+
+        Args:
+            channel_nb: channel number of the detector
+            irradiations: list of dictionaries with keys "t_on" and "t_off" for irradiations
+            time_generator_off: time when the generator was turned off
+            photon_counts: number of gamma rays measured
+            total_efficiency: total efficiency of the detector
+            branching_ratio: branching ratio of the reaction
+
+        Returns:
+            neutron rate in n/s
+        """
+
+        flux = self.get_neutron_flux(
+            channel_nb=channel_nb,
+            photon_counts=photon_counts,
+            irradiations=irradiations,
+            time_generator_off=time_generator_off,
+            total_efficiency=total_efficiency,
+            branching_ratio=branching_ratio,
+        )
+        # convert n/cm2/s to n/s
+        area_of_sphere = 4 * np.pi * distance**2
+
+        flux *= area_of_sphere
+
+        return flux
+
+
 def get_calibration_data(
     check_source_measurements: List[CheckSourceMeasurement],
     background_measurement: Measurement,
@@ -368,8 +553,6 @@ def get_calibration_data(
         for detector in measurement.detectors:
             if detector.channel_nb != channel_nb:
                 continue
-
-            sample = measurement.name[:-2]
 
             hist, bin_edges = detector.get_energy_hist_background_substract(
                 background_detector, bins=None

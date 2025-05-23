@@ -5,6 +5,8 @@ from libra_toolbox.neutron_detection.activation_foils import compass
 from libra_toolbox.neutron_detection.activation_foils.calibration import (
     Nuclide,
     CheckSource,
+    ActivationFoil,
+    Reaction,
 )
 from pathlib import Path
 import datetime
@@ -503,7 +505,7 @@ def test_check_source_detection_efficiency(expected_efficiency):
 
     activity_date = datetime.datetime(2024, 11, 7)
     half_life = 10 * 24 * 3600  # seconds  (10 days)
-    activity = 1000e1  # Bq
+    activity = 5000e1  # Bq
 
     test_nuclide = Nuclide(
         name="TestNuclide Mn54",
@@ -735,3 +737,210 @@ def test_get_multipeak_area_two_close_peaks():
     expected_area_peak_2 = nb_events_peak2
     for i, expected_area in enumerate([expected_area_peak_1, expected_area_peak_2]):
         assert np.isclose(areas[i], expected_area, rtol=1e-2)
+
+
+@pytest.mark.parametrize("efficiency", [1e-2, 0.1, 0.5, 1.0])
+def test_get_gamma_emitted(efficiency: float):
+    # BUILD
+    nuclide_reactant = Nuclide(name="TestNuclide", atomic_mass=200)
+    activated_nuclide = Nuclide(
+        name="ActivatedNuclide",
+        energy=[1000],
+        intensity=[1.0],
+        half_life=10 * 24 * 3600,
+    )
+
+    reaction = Reaction(
+        reactant=nuclide_reactant,
+        product=activated_nuclide,
+        cross_section=20.0,
+    )
+
+    foil = ActivationFoil(reaction=reaction, mass=0.1, name="TestFoil")
+
+    measurement = compass.SampleMeasurement("sample")
+    measurement.foil = foil
+
+    count_time_hr = 1  # hr
+    measurement.start_time = datetime.datetime(2024, 11, 7)
+    measurement.stop_time = datetime.datetime(2024, 11, 7, count_time_hr)
+
+    measurement.detectors = [
+        compass.Detector(channel_nb=4),
+        compass.Detector(channel_nb=3),
+    ]
+    measurement.get_detector(3).real_count_time = count_time_hr * 3600
+    measurement.get_detector(3).live_count_time = count_time_hr * 3600
+
+    nb_counts = 50000
+    energy_events = np.random.normal(
+        loc=activated_nuclide.energy[0], scale=30, size=int(nb_counts)
+    )
+    time_events = np.random.uniform(0, 100, size=energy_events.size)
+    measurement.get_detector(3).events = np.column_stack((time_events, energy_events))
+
+    background_measurement = compass.Measurement("background")
+    background_measurement.detectors = [compass.Detector(channel_nb=3)]
+    background_measurement.get_detector(3).events = np.array([(0, 0), (1, 4000)])
+    background_measurement.get_detector(3).real_count_time = count_time_hr * 3600
+    background_measurement.get_detector(3).live_count_time = count_time_hr * 3600
+
+    # RUN
+    gammas_emmitted = measurement.get_gamma_emitted(
+        background_measurement=background_measurement,
+        efficiency_coeffs=np.array([0.0, efficiency]),  # assume perfect efficiency
+        calibration_coeffs=np.array([1.0, 0.0]),  # assume perfect calibration
+        channel_nb=3,
+        search_width=300,
+    )
+    computed_value = gammas_emmitted[0]
+
+    # TEST
+    expected_value = nb_counts / efficiency
+    assert np.isclose(computed_value, expected_value, rtol=1e-2)
+
+
+@pytest.mark.parametrize("distance", [1.0, 5.0, 10.0])
+@pytest.mark.parametrize("photon_counts", [1e6, 1e7, 1e8, 0.0])
+def test_get_neutron_rate_very_long_half_life(photon_counts, distance):
+    # BUILD
+
+    half_life = 100 * 24 * 3600  # seconds  (100 days)
+
+    nuclide_reactant = Nuclide(name="TestNuclide", atomic_mass=200)
+    activated_nuclide = Nuclide(
+        name="ActivatedNuclide",
+        energy=[1000],
+        intensity=[1.0],
+        half_life=half_life,
+    )
+
+    reaction = Reaction(
+        reactant=nuclide_reactant,
+        product=activated_nuclide,
+        cross_section=20.0,
+    )
+
+    foil = ActivationFoil(
+        reaction=reaction,
+        mass=0.1,
+        name="TestFoil",
+        thickness=None,
+    )
+
+    measurement = compass.SampleMeasurement("sample")
+    measurement.foil = foil
+
+    count_time_hr = 2  # hr
+    measurement.start_time = datetime.datetime(2024, 11, 7)
+    measurement.stop_time = datetime.datetime(2024, 11, 7, count_time_hr)
+
+    measurement.detectors = [
+        compass.Detector(channel_nb=4),
+        compass.Detector(channel_nb=3),
+    ]
+    measurement.get_detector(3).real_count_time = count_time_hr * 3600
+    measurement.get_detector(3).live_count_time = measurement.get_detector(
+        3
+    ).real_count_time
+
+    irradiation_time = 3600  # seconds
+    irradiations = [{"t_on": 0, "t_off": irradiation_time}]
+
+    # RUN
+    computed_rate = measurement.get_neutron_rate(
+        channel_nb=3,
+        photon_counts=photon_counts,
+        irradiations=irradiations,
+        distance=distance,  # cm
+        time_generator_off=measurement.start_time,
+    )
+
+    # TEST
+    expected_nb_decays = photon_counts / activated_nuclide.intensity[0]  # decay events
+    expected_activity = expected_nb_decays / (count_time_hr * 3600)  # Bq
+    # ignoring decays then:
+    # irradiation_time * cross_section * nb_atoms * neutron_flux * decay_constant = activity
+    expected_neutron_flux = expected_activity / (
+        irradiation_time
+        * foil.reaction.cross_section
+        * foil.nb_atoms
+        * activated_nuclide.decay_constant
+    )
+    area_of_sphere = 4 * np.pi * distance**2
+    expected_neutron_rate = expected_neutron_flux * area_of_sphere
+    assert np.isclose(computed_rate, expected_neutron_rate)
+
+
+@pytest.mark.parametrize("distance", [1.0, 5.0, 10.0])
+@pytest.mark.parametrize("photon_counts", [1e15, 1e15, 1e15, 0.0])
+def test_get_neutron_rate_very_moderate_life(photon_counts, distance):
+    # BUILD
+
+    half_life = 10 * 24 * 3600  # seconds  (10 day)
+
+    nuclide_reactant = Nuclide(name="TestNuclide", atomic_mass=200)
+    activated_nuclide = Nuclide(
+        name="ActivatedNuclide",
+        energy=[1000],
+        intensity=[1.0],
+        half_life=half_life,
+    )
+
+    reaction = Reaction(
+        reactant=nuclide_reactant,
+        product=activated_nuclide,
+        cross_section=20.0,
+    )
+
+    foil = ActivationFoil(
+        reaction=reaction,
+        mass=0.1,
+        name="TestFoil",
+        thickness=None,
+    )
+
+    measurement = compass.SampleMeasurement("sample")
+    measurement.foil = foil
+
+    count_time_hr = 1  # hr
+    measurement.start_time = datetime.datetime(2024, 11, 7)
+    measurement.stop_time = datetime.datetime(2024, 11, 7, count_time_hr)
+
+    measurement.detectors = [
+        compass.Detector(channel_nb=4),
+        compass.Detector(channel_nb=3),
+    ]
+    measurement.get_detector(3).real_count_time = count_time_hr * 3600
+    measurement.get_detector(3).live_count_time = measurement.get_detector(
+        3
+    ).real_count_time
+
+    irradiation_time = 0.5 * half_life
+    irradiations = [{"t_on": 0, "t_off": irradiation_time}]
+
+    # RUN
+    computed_rate = measurement.get_neutron_rate(
+        channel_nb=3,
+        photon_counts=photon_counts,
+        irradiations=irradiations,
+        distance=distance,  # cm
+        time_generator_off=measurement.start_time,
+    )
+
+    # TEST
+    expected_nb_decays = photon_counts / activated_nuclide.intensity[0]  # decay events
+    expected_neutron_flux = (
+        expected_nb_decays
+        * activated_nuclide.decay_constant
+        / (
+            (1 - np.exp(-foil.reaction.product.decay_constant * irradiation_time))
+            * (1 - np.exp(-foil.reaction.product.decay_constant * count_time_hr * 3600))
+            * foil.reaction.cross_section
+            * foil.nb_atoms
+        )
+    )
+
+    area_of_sphere = 4 * np.pi * distance**2
+    expected_neutron_rate = expected_neutron_flux * area_of_sphere
+    assert np.isclose(computed_rate, expected_neutron_rate)

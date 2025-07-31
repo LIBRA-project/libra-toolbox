@@ -58,7 +58,7 @@ def build_vault_model(
         raise ModuleNotFoundError(
             "openmc and openmc_data_downloader are required.")
 
-    from materials import Aluminum, Air, Concrete, IronConcrete, RicoRad, SS304, Copper
+    from .materials import Aluminum, Air, Concrete, IronConcrete, RicoRad, SS304, Copper
 
     # Define materials
     # Aluminum = mat.Aluminum

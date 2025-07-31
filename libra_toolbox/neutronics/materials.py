@@ -172,83 +172,12 @@ BPE.add_nuclide("H1", 0.1345, "wo")
 BPE.add_element("B", 0.0500, "wo")
 BPE.add_element("C", 0.8155, "wo")
 
-# Name: Non-borated polyethylene
-# Density: 0.93 g/cm3
-# Reference: PNNL Report 15870 (Rev. 1)
-# Describes: General purpose neutron shielding
-Polyethylene = openmc.Material()
-Polyethylene.set_density("g/cm3", 0.93)
-Polyethylene.add_nuclide("H1", 0.666662, "ao")
-Polyethylene.add_element("C", 0.333338, "ao")
-
 # High Density Polyethylene
 # Reference:  PNNL Report 15870 (Rev. 1)
 HDPE = openmc.Material(name="HDPE")
 HDPE.set_density("g/cm3", 0.95)
 HDPE.add_element("H", 0.143724, "wo")
 HDPE.add_element("C", 0.856276, "wo")
-
-# Name: Zirconium dihydride
-# Density: 5.6 g/cm3
-# Reference: JNM 386-388 (2009) 119-121
-# Describes: General purpose neutron shielding
-Material_22 = openmc.Material()
-Material_22.set_density("g/cm3", 5.6)
-Material_22.add_nuclide("H1", 0.0216, "wo")
-Material_22.add_element("Zr", 0.9784, "wo")
-
-# Name: Zirconium borohydride
-# Density: 1.18 g/cm3
-# Reference: JNM 386-388 (2009) 119-121
-# Describes: General purpose neutron shielding
-Material_23 = openmc.Material()
-Material_23.set_density("g/cm3", 1.18)
-Material_23.add_nuclide("H1", 0.1073, "wo")
-Material_23.add_nuclide("B10", 0.0571, "wo")
-Material_23.add_nuclide("B11", 0.23, "wo")
-Material_23.add_element("Zr", 0.6056, "wo")
-
-# Density: 1.848 g/cm3
-# Reference: None
-# Describes: Highest intenstiy neutron production target
-# Notes: Uses ENDF-derived proton nuclear data libray
-Material_30 = openmc.Material()
-Material_30.set_density("g/cm3", 1.848)
-Material_30.add_nuclide("Be9", 1.0, "ao")
-
-# Name: Concrete (Regular)
-# Density: 2.3 g/cm3
-# Reference: Provided by Matthey Carey, MIT EHS/RPP (mgcarey@mit.edu)
-# Describes: Facility walls, foundation, floors for activation calculations
-Material_40 = openmc.Material()
-Material_40.set_density("g/cm3", 2.3)
-Material_40.add_nuclide("Fe54", 2.0138e-05, "ao")
-Material_40.add_nuclide("Fe56", 0.00031874, "ao")
-Material_40.add_nuclide("Fe57", 7.2915e-06, "ao")
-Material_40.add_nuclide("Fe58", 1.0416e-06, "ao")
-Material_40.add_nuclide("H1", 0.01374, "ao")
-Material_40.add_nuclide("H2", 2.0613e-06, "ao")
-Material_40.add_nuclide("O16", 0.045685, "ao")
-Material_40.add_nuclide("O17", 1.8318e-05, "ao")
-Material_40.add_nuclide("Mg24", 9.0027e-05, "ao")
-Material_40.add_nuclide("Mg25", 1.1397e-05, "ao")
-Material_40.add_nuclide("Mg26", 1.2548e-05, "ao")
-Material_40.add_nuclide("Ca40", 0.001474, "ao")
-Material_40.add_nuclide("Ca42", 9.8378e-06, "ao")
-Material_40.add_nuclide("Ca43", 2.0527e-06, "ao")
-Material_40.add_nuclide("Ca44", 3.1718e-05, "ao")
-Material_40.add_nuclide("Ca46", 6.0821e-08, "ao")
-Material_40.add_nuclide("Ca48", 2.8434e-06, "ao")
-Material_40.add_nuclide("Si28", 0.015328, "ao")
-Material_40.add_nuclide("Si29", 0.00077613, "ao")
-Material_40.add_nuclide("Si30", 0.0005152, "ao")
-Material_40.add_nuclide("Na23", 0.00096395, "ao")
-Material_40.add_nuclide("K39", 0.00042949, "ao")
-Material_40.add_nuclide("K40", 4.6053e-08, "ao")
-Material_40.add_nuclide("K41", 3.0993e-05, "ao")
-Material_40.add_nuclide("Al27", 0.0017453, "ao")
-Material_40.add_nuclide("C12", 0.00011404, "ao")
-Material_40.add_nuclide("C13", 1.28e-06, "ao")
 
 # Soil material taken from PNNL Materials Compendium for Earth, U.S. Average
 Soil = openmc.Material(name="Soil")
@@ -273,14 +202,6 @@ Brick.add_element("Al", 0.003747, percent_type="ao")
 Brick.add_element("Si", 0.323229, percent_type="ao")
 Brick.add_element("Ca", 0.007063, percent_type="ao")
 Brick.add_element("Fe", 0.002534, percent_type="ao")
-
-# Previous model uses 10% borated high density polyethylene, but
-# according to Melhus, et. al., RicoRad consists of "2.00% mass boron
-# in a polyethylene-based matrix having a mass density of 0.945 g/cm^3"
-# Source:
-# Melhus, Christopher, et al. â€˜Storage Safe Shielding Assessment for a
-# HDR Californium-252 Brachytherapy Sourceâ€™.
-# Monte Carlo 2005 Topical Meeting, 01 2005, pp. 219â€“229.
 
 RicoRad = openmc.Material(name="RicoRad")
 RicoRad.set_density("g/cm3", 0.945)

@@ -264,3 +264,51 @@ Beryllium = openmc.Material(name="Beryllium")
 # Be.temperature = 100 + 273
 Beryllium.add_element("Be", 1.0, "ao")
 Beryllium.set_density("g/cm3", 1.848)
+
+# Heater
+Heater_mat = openmc.Material(name="heater")
+Heater_mat.add_element("C", 0.000990, "wo")
+Heater_mat.add_element("Al", 0.003960, "wo")
+Heater_mat.add_element("Si", 0.004950, "wo")
+Heater_mat.add_element("P", 0.000148, "wo")
+Heater_mat.add_element("S", 0.000148, "wo")
+Heater_mat.add_element("Ti", 0.003960, "wo")
+Heater_mat.add_element("Cr", 0.215000, "wo")
+Heater_mat.add_element("Mn", 0.004950, "wo")
+Heater_mat.add_element("Fe", 0.049495, "wo")
+Heater_mat.add_element("Co", 0.009899, "wo")
+Heater_mat.add_element("Ni", 0.580000, "wo")
+Heater_mat.add_element("Nb", 0.036500, "wo")
+Heater_mat.add_element("Mo", 0.090000, "wo")
+Heater_mat.set_density("g/cm3", 2.44)
+
+# Lithium-Lead
+# Composition from certificate of analysis provided with Lithium-Lead from Camex
+Lithium_lead = openmc.Material(name="Lithium Lead")
+Lithium_lead.add_element("Pb", 0.993479, "wo")
+Lithium_lead.add_element("Li", 0.0064, "wo")
+Lithium_lead.add_element("Tl", 0.00002, "wo")
+Lithium_lead.add_element("Zn", 0.000002, "wo")
+Lithium_lead.add_element("Sn", 0.000002, "wo")
+Lithium_lead.add_element("Sb", 0.000002, "wo")
+Lithium_lead.add_element("Ni", 0.000001, "wo")
+Lithium_lead.add_element("Cu", 0.000002, "wo")
+Lithium_lead.add_element("Cd", 0.000002, "wo")
+Lithium_lead.add_element("Bi", 0.00008, "wo")
+Lithium_lead.add_element("As", 0.000002, "wo")
+Lithium_lead.add_element("Ag", 0.000008, "wo")
+Lithium_lead.set_density("g/cm3", 9.10411395)  # Density at 600C
+
+# 316L Stainless Steel
+# Data from https://www.thyssenkrupp-materials.co.uk/stainless-steel-316l-14404.html
+SS316L = openmc.Material(name="316L Steel")
+SS316L.add_element("C", 0.0003, "wo")
+SS316L.add_element("Si", 0.01, "wo")
+SS316L.add_element("Mn", 0.02, "wo")
+SS316L.add_element("P", 0.00045, "wo")
+SS316L.add_element("S", 0.000151, "wo")
+SS316L.add_element("Cr", 0.175, "wo")
+SS316L.add_element("Ni", 0.115, "wo")
+SS316L.add_element("N", 0.001, "wo")
+SS316L.add_element("Mo", 0.00225, "wo")
+SS316L.add_element("Fe", 0.655599, "wo")

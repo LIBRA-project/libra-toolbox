@@ -2,12 +2,12 @@ import openmc
 
 
 def get_exp_cllif_density(temp, LiCl_frac=0.695):
-    """ Calculates density of ClLiF [g/cc] from temperature in Celsius
-    and molar concentration of LiCl. Valid for 660 C - 1000 C. 
-    Source: 
-    G. J. Janz, R. P. T. Tomkins, C. B. Allen; 
-    Molten Salts: Volume 4, Part 4 
-    Mixed Halide Melts Electrical Conductance, Density, Viscosity, and Surface Tension Data. 
+    """Calculates density of ClLiF [g/cc] from temperature in Celsius
+    and molar concentration of LiCl. Valid for 660 C - 1000 C.
+    Source:
+    G. J. Janz, R. P. T. Tomkins, C. B. Allen;
+    Molten Salts: Volume 4, Part 4
+    Mixed Halide Melts Electrical Conductance, Density, Viscosity, and Surface Tension Data.
     J. Phys. Chem. Ref. Data 1 January 1979; 8 (1): 125–302.
     https://doi.org/10.1063/1.555590
     """
@@ -22,8 +22,7 @@ def get_exp_cllif_density(temp, LiCl_frac=0.695):
     f = 8.73570e-9
     g = -5.11184e-10
 
-    rho = a + b * C + c * temp + d * C**2 \
-        + e * C**3 + f * temp * C**2 + g * C * temp**2
+    rho = a + b * C + c * temp + d * C**2 + e * C**3 + f * temp * C**2 + g * C * temp**2
 
     return rho
 
@@ -31,36 +30,36 @@ def get_exp_cllif_density(temp, LiCl_frac=0.695):
 # Define Materials
 # Source: PNNL Materials Compendium April 2021
 # PNNL-15870, Rev. 2
-Inconel625 = openmc.Material(name='Inconel 625')
-Inconel625.set_density('g/cm3', 8.44)
-Inconel625.add_element('C',  0.000990, 'wo')
-Inconel625.add_element('Al', 0.003960, 'wo')
-Inconel625.add_element('Si', 0.004950, 'wo')
-Inconel625.add_element('P',  0.000148, 'wo')
-Inconel625.add_element('S',  0.000148, 'wo')
-Inconel625.add_element('Ti', 0.003960, 'wo')
-Inconel625.add_element('Cr', 0.215000, 'wo')
-Inconel625.add_element('Mn', 0.004950, 'wo')
-Inconel625.add_element('Fe', 0.049495, 'wo')
-Inconel625.add_element('Co', 0.009899, 'wo')
-Inconel625.add_element('Ni', 0.580000, 'wo')
-Inconel625.add_element('Nb', 0.036500, 'wo')
-Inconel625.add_element('Mo', 0.090000, 'wo')
+Inconel625 = openmc.Material(name="Inconel 625")
+Inconel625.set_density("g/cm3", 8.44)
+Inconel625.add_element("C", 0.000990, "wo")
+Inconel625.add_element("Al", 0.003960, "wo")
+Inconel625.add_element("Si", 0.004950, "wo")
+Inconel625.add_element("P", 0.000148, "wo")
+Inconel625.add_element("S", 0.000148, "wo")
+Inconel625.add_element("Ti", 0.003960, "wo")
+Inconel625.add_element("Cr", 0.215000, "wo")
+Inconel625.add_element("Mn", 0.004950, "wo")
+Inconel625.add_element("Fe", 0.049495, "wo")
+Inconel625.add_element("Co", 0.009899, "wo")
+Inconel625.add_element("Ni", 0.580000, "wo")
+Inconel625.add_element("Nb", 0.036500, "wo")
+Inconel625.add_element("Mo", 0.090000, "wo")
 
 # alumina insulation
 # data from https://precision-ceramics.com/materials/alumina/
-Alumina = openmc.Material(name='Alumina insulation')
-Alumina.add_element('O', 0.6, 'ao')
-Alumina.add_element('Al', 0.4, 'ao')
-Alumina.set_density('g/cm3', 3.98)
+Alumina = openmc.Material(name="Alumina insulation")
+Alumina.add_element("O", 0.6, "ao")
+Alumina.add_element("Al", 0.4, "ao")
+Alumina.set_density("g/cm3", 3.98)
 
 # epoxy
-Epoxy = openmc.Material(name='Epoxy')
-Epoxy.add_element('C', 0.70, 'wo')
-Epoxy.add_element('H', 0.08, 'wo')
-Epoxy.add_element('O', 0.15, 'wo')
-Epoxy.add_element('N', 0.07, 'wo')
-Epoxy.set_density('g/cm3', 1.2)
+Epoxy = openmc.Material(name="Epoxy")
+Epoxy.add_element("C", 0.70, "wo")
+Epoxy.add_element("H", 0.08, "wo")
+Epoxy.add_element("O", 0.15, "wo")
+Epoxy.add_element("N", 0.07, "wo")
+Epoxy.set_density("g/cm3", 1.2)
 
 # helium @5psig
 pressure = 34473.8  # Pa ~ 5 psig
@@ -69,8 +68,8 @@ R_he = 2077  # J/(kg*K)
 density = pressure / (R_he * temperature)  # in kg/cm^3
 density *= 1 / 1000  # in g/cm^3
 Helium = openmc.Material(name="Helium")
-Helium.add_element('He', 1.0, 'ao')
-Helium.set_density('g/cm3', density)
+Helium.add_element("He", 1.0, "ao")
+Helium.set_density("g/cm3", density)
 
 # PbLi - eutectic - natural - pure
 Pbli = openmc.Material(name="pbli")
@@ -79,21 +78,20 @@ Pbli.add_element("Li", 15.2, "ao")
 Pbli.set_density("g/cm3", 11)
 
 # lif-licl - eutectic - natural - pure
-Cllif = openmc.Material(name='ClLiF')
+Cllif = openmc.Material(name="ClLiF")
 LiCl_frac = 0.695  # at.fr.
 
-Cllif.add_element('F', .5*(1 - LiCl_frac), 'ao')
-Cllif.add_element('Li', 1.0, 'ao')
-Cllif.add_element('Cl', .5*LiCl_frac, 'ao')
-Cllif.set_density('g/cm3', get_exp_cllif_density(650)
-                  )  # 69.5 at. % LiCL at 650 C
+Cllif.add_element("F", 0.5 * (1 - LiCl_frac), "ao")
+Cllif.add_element("Li", 1.0, "ao")
+Cllif.add_element("Cl", 0.5 * LiCl_frac, "ao")
+Cllif.set_density("g/cm3", get_exp_cllif_density(650))  # 69.5 at. % LiCL at 650 C
 
 # lif-licl - eutectic - natural - EuF3 spiced
 Spicyclif = openmc.Material(name="spicyclif")
-Spicyclif.add_element("F", .15935, "wo")
-Spicyclif.add_element("Li", .17857, "wo")
-Spicyclif.add_element("Cl", .6340, "wo")
-Spicyclif.add_element("Eu", .0279, "wo")
+Spicyclif.add_element("F", 0.15935, "wo")
+Spicyclif.add_element("Li", 0.17857, "wo")
+Spicyclif.add_element("Cl", 0.6340, "wo")
+Spicyclif.add_element("Eu", 0.0279, "wo")
 
 # FLiNaK - eutectic - natural - pure
 Flinak = openmc.Material(name="flinak")

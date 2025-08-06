@@ -4,6 +4,7 @@ def build_vault_model(
     added_cells=[],
     added_materials=[],
     overall_exclusion_region=None,
+    cross_sections_destination="cross_sections",
 ) -> "openmc.model.Model":
     """
     Builds a complete OpenMC model for a simulation setup representing a
@@ -55,7 +56,8 @@ def build_vault_model(
         import openmc.model
         import openmc_data_downloader as odd
     except ModuleNotFoundError:
-        raise ModuleNotFoundError("openmc and openmc_data_downloader are required.")
+        raise ModuleNotFoundError(
+            "openmc and openmc_data_downloader are required.")
 
     from .materials import Aluminum, Air, Concrete, IronConcrete, RicoRad, SS304, Copper
 
@@ -78,10 +80,12 @@ def build_vault_model(
         libraries=["ENDFB-8.0-NNDC"],
         set_OPENMC_CROSS_SECTIONS=True,
         particles=["neutron"],
+        destination=cross_sections_destination,
     )
     #
     # Definition of the spherical void/blackhole boundary
-    Surface_95 = openmc.Sphere(x0=0.0, y0=0.0, z0=0.0, r=2500.0, boundary_type="vacuum")
+    Surface_95 = openmc.Sphere(
+        x0=0.0, y0=0.0, z0=0.0, r=2500.0, boundary_type="vacuum")
 
     # 24
     Surface_24 = openmc.model.RectangularParallelepiped(
@@ -164,7 +168,8 @@ def build_vault_model(
 
     # with an angle of 2.8 degrees. The positive vector points towards the
     # lower-right (Southeast) corner of the geometry
-    Surface_48 = openmc.Plane(a=0.99881, b=-0.04885, c=0.0, d=964.9095439999999)
+    Surface_48 = openmc.Plane(a=0.99881, b=-0.04885,
+                              c=0.0, d=964.9095439999999)
 
     # The CMU wall partially covering the north shield wall in Room III
     Vault_north_wall_ext_reg = -Surface_22 & -Surface_48 & +Surface_11
@@ -361,12 +366,16 @@ def build_vault_model(
         fill=Copper, region=DANTE_vault_bot_magnet_reg
     )
     I_beam_cell = openmc.Cell(fill=SS304, region=I_beam_reg)
-    North_vault_wall_cell = openmc.Cell(fill=Concrete, region=North_vault_wall_reg)
+    North_vault_wall_cell = openmc.Cell(
+        fill=Concrete, region=North_vault_wall_reg)
     Vault_floor_cell = openmc.Cell(fill=Concrete, region=Vault_floor_reg)
     Vault_ceiling_cell = openmc.Cell(fill=Concrete, region=Vault_ceiling_reg)
-    West_vault_wall_cell = openmc.Cell(fill=Concrete, region=West_vault_wall_reg)
-    East_vault_wall_cell = openmc.Cell(fill=Concrete, region=East_vault_wall_reg)
-    South_vault_wall_cell = openmc.Cell(fill=Concrete, region=South_vault_wall_reg)
+    West_vault_wall_cell = openmc.Cell(
+        fill=Concrete, region=West_vault_wall_reg)
+    East_vault_wall_cell = openmc.Cell(
+        fill=Concrete, region=East_vault_wall_reg)
+    South_vault_wall_cell = openmc.Cell(
+        fill=Concrete, region=South_vault_wall_reg)
     foundation = openmc.Cell(fill=Concrete, region=Region_21)
     Vault_north_wall_ext_cell = openmc.Cell(
         fill=Concrete, region=Vault_north_wall_ext_reg

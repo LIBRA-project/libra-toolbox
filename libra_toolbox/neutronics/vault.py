@@ -74,7 +74,9 @@ def build_vault_model(
     )
 
     # Add materials from imported model
-    materials += added_materials
+    for mat in added_materials:
+        if mat not in materials:
+            materials.append(mat)
 
     materials.download_cross_section_data(
         libraries=["ENDFB-8.0-NNDC"],

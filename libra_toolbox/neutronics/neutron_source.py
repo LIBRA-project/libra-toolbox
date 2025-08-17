@@ -29,9 +29,9 @@ def A325_generator_diamond(
         by default (0, 0, 0)
     reference_uvw : tuple, optional
         direction for the polar angle (tuple or list of versors)
-    it is the same for the openmc.PolarAzimuthal class
-    more specifically, polar angle = 0 is the direction of the D accelerator
-    towards the Zr-T target, by default (0, 0, 1)
+        it is the same for the openmc.PolarAzimuthal class
+        more specifically, polar angle = 0 is the direction of the D accelerator
+        towards the Zr-T target, by default (0, 0, 1)
 
     Returns
     -------

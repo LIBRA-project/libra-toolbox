@@ -32,3 +32,25 @@ def test_simple_case(TBR):
 
     assert np.isclose(model.concentrations[-1], 0)
     assert np.isclose(expected_total_production, computed_total_production, rtol=1e-2)
+
+
+def test_mass_transport_coeffs_time_dependent():
+
+    def k_top(t):
+        return 2 / (1 + t.magnitude) * ureg.m * ureg.s**-1
+
+    def k_wall(t):
+        return 3 / (1 + t.magnitude) * ureg.m * ureg.s**-1
+
+    model = Model(
+        radius=2 * ureg.m,
+        height=4 * ureg.m,
+        TBR=1 * ureg.particle * ureg.neutron**-1,
+        k_top=k_top,
+        k_wall=k_wall,
+        irradiations=[(0 * ureg.s, 10 * ureg.s), (60 * ureg.s, 70 * ureg.s)],
+        neutron_rate=30 * ureg.neutron * ureg.s**-1,
+    )
+
+    # run
+    model.run(100 * ureg.s)

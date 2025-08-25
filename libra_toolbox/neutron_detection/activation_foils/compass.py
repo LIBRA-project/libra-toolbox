@@ -520,6 +520,7 @@ class CheckSourceMeasurement(Measurement):
 
         # update the parameters if kwargs are provided
         if kwargs:
+            start_index = kwargs.get("start_index", start_index)
             prominence = kwargs.get("prominence", prominence)
             height = kwargs.get("height", height)
             width = kwargs.get("width", width)

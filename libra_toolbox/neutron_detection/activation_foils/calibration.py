@@ -133,6 +133,7 @@ class CheckSource:
     nuclide: Nuclide
     activity_date: datetime.date
     activity: float
+    activity_error: float = 0.0
 
     """
     Class to hold the information of a check source.
@@ -174,6 +175,36 @@ class CheckSource:
 
         time = (date - activity_datetime).total_seconds()
         act_expec = self.activity * np.exp(-decay_constant * time)
+        return act_expec
+    
+    def get_expected_activity_error(self, date: datetime.date) -> float:
+        """Returns the expected activity error of the check source at a given date.
+        Time is assumed to have no error in its measurement.
+
+        Args:
+            date: the date to calculate the expected activity error for.
+
+        Returns:
+            the expected activity error of the check source in Bq
+        """
+
+        decay_constant = np.log(2) / self.nuclide.half_life
+
+        # Convert date to datetime if needed
+        if isinstance(self.activity_date, datetime.date) and not isinstance(
+            self.activity_date, datetime.datetime
+        ):
+
+            activity_datetime = datetime.datetime.combine(
+                self.activity_date, datetime.datetime.min.time()
+            )
+            # add a timezone
+            activity_datetime = activity_datetime.replace(tzinfo=date.tzinfo)
+        else:
+            activity_datetime = self.activity_date
+
+        time = (date - activity_datetime).total_seconds()
+        act_expec = self.activity_error * np.exp(-decay_constant * time)
         return act_expec
 
 

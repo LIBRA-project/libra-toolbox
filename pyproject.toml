@@ -13,13 +13,13 @@ authors = [
 ]
 description = "Design and analysis tools for LIBRA project"
 license = {file = "LICENSE"}
-requires-python = ">=3.6"
+requires-python = ">=3.10"
 dynamic = ["version"]
-dependencies = ["numpy", "pint", "scipy", "matplotlib", "sympy", "pandas"]
+dependencies = ["numpy", "pint", "scipy", "matplotlib", "sympy", "pandas", "h5py", "uproot", "h5py"]
 
 [project.optional-dependencies]
 neutronics = ["openmc-data-downloader"]
-tests = ["pytest>=5.4.3", "pytest-cov", "nbconvert", "ipykernel"]
+tests = ["pytest>=5.4.3", "pytest-cov", "nbconvert", "ipykernel", "requests"]
 
 [tool.setuptools_scm]
 write_to = "libra_toolbox/_version.py"

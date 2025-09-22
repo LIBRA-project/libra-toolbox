@@ -3,7 +3,7 @@ from .calculations import n93_number, delay_time
 import numpy as np
 
 
-def get_chain(irradiations):
+def get_chain(irradiations, decay_constant=Nb92m_decay_constant):
     """
     Returns the value of
     (1 - exp(-\lambda * \Delta t_1)) * (1 - exp(-\lambda * \Delta t_2)) * ... * (1 - exp(-\lambda * \Delta t_n))
@@ -23,7 +23,7 @@ def get_chain(irradiations):
 
     for period in periods:
         delta_t = period["end"] - period["start"]
-        result = 1 - result * np.exp(-Nb92m_decay_constant * delta_t)
+        result = 1 - result * np.exp(-decay_constant * delta_t)
     return result
 
 

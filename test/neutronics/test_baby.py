@@ -1,16 +1,17 @@
-import openmc
 from libra_toolbox.neutronics import vault
 from libra_toolbox.neutronics.baby1l import baby_geometry
 from libra_toolbox.neutronics.neutron_source import A325_generator_diamond
 from libra_toolbox.neutronics.materials import *
 
+import pytest
 
-def baby_model():
-    """Returns an openmc model of the BABY experiment.
 
-    Returns:
-        the openmc model
-    """
+def test_baby_model():
+    """Test that the baby_geometry model can be created and run without errors inside the vault"""
+    try:
+        import openmc
+    except ImportError:
+        pytest.skip("OpenMC is not installed")
 
     materials = [
         Inconel625,
@@ -66,14 +67,4 @@ def baby_model():
         overall_exclusion_region=overall_exclusion_region,
     )
 
-    return model
-
-
-if __name__ == "__main__":
-    model = baby_model()
     model.run()
-    sp = openmc.StatePoint(f"statepoint.{model.settings.batches}.h5")
-    tbr_tally = sp.get_tally(name="TBR").get_pandas_dataframe()
-
-    print(f"TBR: {tbr_tally['mean'].iloc[0]:.6e}\n")
-    print(f"TBR std. dev.: {tbr_tally['std. dev.'].iloc[0]:.6e}\n")

@@ -751,6 +751,7 @@ def get_calibration_data(
     check_source_measurements: List[CheckSourceMeasurement],
     background_measurement: Measurement,
     channel_nb: int,
+    peak_kwargs: dict = None,
 ):
     background_detector = [
         detector
@@ -769,7 +770,15 @@ def get_calibration_data(
             hist, bin_edges = detector.get_energy_hist_background_substract(
                 background_detector, bins=None
             )
-            peaks_ind = measurement.get_peaks(hist)
+            if peak_kwargs is not None:
+                if measurement.check_source.nuclide in peak_kwargs.keys():
+                    kwargs = peak_kwargs[measurement.check_source.nuclide]
+                else:
+                    kwargs = {}
+            else:
+                kwargs = {}
+
+            peaks_ind = measurement.get_peaks(hist, **kwargs)
             peaks = bin_edges[peaks_ind]
 
             if len(peaks) != len(measurement.check_source.nuclide.energy):

@@ -450,9 +450,6 @@ class CheckSourceMeasurement(Measurement):
         )
 
         calibrated_bin_edges = np.polyval(calibration_coeffs, bin_edges)
-        print('Uncalibrated measured energies:', self.check_source.nuclide._uncalibrated_measured_energies[channel_nb])
-        print('Calibration coefficients:', calibration_coeffs)
-        print('Calibrated measured energies:', self.check_source.nuclide.calibrated_measured_energies(channel_nb, calibration_coeffs))
 
         nb_counts_measured = get_multipeak_area(
             hist,
@@ -846,9 +843,7 @@ def fit_peak_gauss(hist, xvals, peak_ergs, search_width=600, threshold_overlap=2
             peak_ergs[i],
             search_width / (3 * len(peak_ergs)),
         ]
-    print("TOOLBOX: Guessed parameters: ", guess_parameters)
 
-    # print('Search start:', search_start, ' Search end:', search_end)
 
     parameters, covariance = curve_fit(
         gauss,
@@ -934,7 +929,6 @@ def get_multipeak_area(
         )
         area = gross_area - trap_cutoff_area
 
-        print("TOOLBOX: Peak energy:", peak_ergs[i], " Gross area:", gross_area, " Cutoff area:", trap_cutoff_area, " Net area:", area)
         areas += [area]
 
     return areas
@@ -1018,7 +1012,7 @@ def get_events(directory: str) -> Tuple[Dict[int, np.ndarray], Dict[int, np.ndar
         time_values[ch] = np.empty(0)
         energy_values[ch] = np.empty(0)
         for i, filename in enumerate(data_filenames[ch]):
-            print(f'Processing File {i}')
+            # print(f'Processing File {i}')
 
             csv_file_path = os.path.join(directory, filename)
 

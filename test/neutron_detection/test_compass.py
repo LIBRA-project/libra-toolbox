@@ -707,7 +707,8 @@ def test_get_calibration_data(a, b):
     assert np.allclose(calibration_energies, real_energies, rtol=1e-2)
 
 
-def test_get_multipeak_area_single_peak():
+@pytest.mark.parametrize("summing_method", ["sum_gaussian", "sum_histogram"])
+def test_get_multipeak_area_single_peak(summing_method):
     """
     Test the get_multipeak_area function from the compass module.
     Checks that the area under the peaks is correctly computed.
@@ -723,14 +724,15 @@ def test_get_multipeak_area_single_peak():
     hist, bin_edges = np.histogram(energy_events, bins=np.arange(0, 3000))
 
     # RUN
-    areas = compass.get_multipeak_area(hist, bin_edges, peak_ergs=[energy])
+    areas = compass.get_multipeak_area(hist, bin_edges, peak_ergs=[energy],
+                                       summing_method=summing_method)
 
     # TEST
     expected_area = np.sum(hist)
     assert np.isclose(areas[0], expected_area, rtol=1e-2)
 
-
-def test_get_multipeak_area_two_separated_peaks():
+@pytest.mark.parametrize("summing_method", ["sum_gaussian", "sum_histogram"])
+def test_get_multipeak_area_two_separated_peaks(summing_method):
     """
     Test the get_multipeak_area function from the compass module.
     Checks that the area under the peaks is correctly computed.
@@ -756,7 +758,9 @@ def test_get_multipeak_area_two_separated_peaks():
     hist, bin_edges = np.histogram(energy_events, bins=np.arange(0, 3000))
 
     # RUN
-    areas = compass.get_multipeak_area(hist, bin_edges, peak_ergs=[energy1, energy2])
+    areas = compass.get_multipeak_area(hist, bin_edges, 
+                                       peak_ergs=[energy1, energy2],
+                                       summing_method=summing_method)
 
     # TEST
 
@@ -796,7 +800,8 @@ def test_get_multipeak_area_two_close_peaks():
     areas = compass.get_multipeak_area(hist, 
                                        bin_edges, 
                                        peak_ergs=[energy1, energy2],
-                                       search_width=200)
+                                       search_width=200,
+                                       summing_method="sum_gaussian")
     
 
     # TEST

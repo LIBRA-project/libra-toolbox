@@ -436,6 +436,12 @@ class CheckSourceMeasurement(Measurement):
             calibration_coeffs: the calibration polynomial coefficients for the detector
             channel_nb: the channel number of the detector
             search_width: the search width for the peak fitting
+            threshold_overlap: the threshold width for considering two peaks as overlapping
+            summing_method: method to sum counts under the peak, either 'sum_gaussian' or 'sum_histogram'
+                            with 'sum_gaussian' fitting a Gaussian to the peak and integrating it, 
+                            and with 'sum_histogram' summing the histogram counts under the peak.
+                            'sum_histogram' SHOULD NOT BE USED for OVERLAPPING peaks as it will
+                            overestimate the counts.
 
         Returns:
             the detection efficiency
@@ -592,6 +598,7 @@ class SampleMeasurement(Measurement):
         calibration_coeffs,
         channel_nb: int,
         search_width: float = 800,
+        summing_method: str = 'sum_gaussian',
     ):
         # find right background detector
 
@@ -611,6 +618,7 @@ class SampleMeasurement(Measurement):
             calibrated_bin_edges,
             energy,
             search_width=search_width,
+            summing_method=summing_method,
         )
 
         nb_counts_measured = np.array(nb_counts_measured)

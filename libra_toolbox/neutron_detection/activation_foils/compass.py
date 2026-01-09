@@ -417,6 +417,7 @@ class CheckSourceMeasurement(Measurement):
         channel_nb: int,
         search_width: float = 800,
         threshold_overlap: float = 200,
+        summing_method: str = 'sum_gaussian',
     ) -> Union[np.ndarray, float]:
         """
         Computes the detection efficiency of a check source given the
@@ -449,17 +450,17 @@ class CheckSourceMeasurement(Measurement):
         )
 
         calibrated_bin_edges = np.polyval(calibration_coeffs, bin_edges)
-        # width_calibration_coeffs = np.append(calibration_coeffs[:-1], 0)
-        # self.check_source.nuclide.calibrated_peak_widths = np.polyval(calibration_coeffs,
-        #                                                               self.check_source.nuclide.calibrated_peak_widths)
-        print('libra-toolbox search_width:', search_width, ' threshold_overlap:', threshold_overlap)
+        print('Uncalibrated measured energies:', self.check_source.nuclide._uncalibrated_measured_energies[channel_nb])
+        print('Calibration coefficients:', calibration_coeffs)
+        print('Calibrated measured energies:', self.check_source.nuclide.calibrated_measured_energies(channel_nb, calibration_coeffs))
 
         nb_counts_measured = get_multipeak_area(
             hist,
             calibrated_bin_edges,
-            self.check_source.nuclide.energy,
+            self.check_source.nuclide.calibrated_measured_energies(channel_nb, calibration_coeffs),
             search_width=search_width,
             threshold_overlap=threshold_overlap,
+            summing_method=summing_method,
         )
 
         nb_counts_measured = np.array(nb_counts_measured)
@@ -530,24 +531,25 @@ class CheckSourceMeasurement(Measurement):
         elif self.detector_type.lower() == 'hpge':
             # peak finding parameters for HPGe detectors
             start_index = 10
-            prominence = 0.10 * np.max(hist[start_index:])
-            height = 0.10 * np.max(hist[start_index:])
-            width = [2, 30]
-            distance = 10
+            prominence = 0.50 * np.max(hist[start_index:])
+            height = 0.50 * np.max(hist[start_index:])
+            width = [2, 50]
+            distance = 100
             if self.check_source.nuclide == na22:
                 start_index = 100
                 height = 0.2 * np.max(hist[start_index:])
                 prominence = 0.2 * np.max(hist[start_index:])
                 distance = 100
             elif self.check_source.nuclide == co60:
-                height = 0.2 * np.max(hist[start_index:])
-                prominence = 0.2 * np.max(hist[start_index:])
+                height = 0.5 * np.max(hist[start_index:])
+                prominence = 0.5 * np.max(hist[start_index:])
             elif self.check_source.nuclide == ba133:
                 start_index = 150
                 height = 0.10 * np.max(hist[start_index:])
                 prominence = 0.10 * np.max(hist[start_index:])
                 distance = 10
             elif self.check_source.nuclide == mn54:
+                start_index = 400
                 height = 0.9 * np.max(hist[start_index:])
                 prominence = 0.9 * np.max(hist[start_index:])
                 distance = 100
@@ -788,6 +790,10 @@ def get_calibration_data(
                 )
             calibration_channels += list(peaks)
             calibration_energies += measurement.check_source.nuclide.energy
+            # Store the uncalibrated measured energies in the measurement object for later use
+            if measurement.check_source.nuclide._uncalibrated_measured_energies is None:
+                measurement.check_source.nuclide._uncalibrated_measured_energies = {}
+            measurement.check_source.nuclide._uncalibrated_measured_energies[channel_nb] = list(peaks)
 
     inds = np.argsort(calibration_channels)
     calibration_channels = np.array(calibration_channels)[inds]
@@ -840,8 +846,9 @@ def fit_peak_gauss(hist, xvals, peak_ergs, search_width=600, threshold_overlap=2
             peak_ergs[i],
             search_width / (3 * len(peak_ergs)),
         ]
+    print("TOOLBOX: Guessed parameters: ", guess_parameters)
 
-    print('Search start:', search_start, ' Search end:', search_end)
+    # print('Search start:', search_start, ' Search end:', search_end)
 
     parameters, covariance = curve_fit(
         gauss,
@@ -854,7 +861,12 @@ def fit_peak_gauss(hist, xvals, peak_ergs, search_width=600, threshold_overlap=2
 
 
 def get_multipeak_area(
-    hist, bins, peak_ergs, search_width=600, threshold_overlap=200
+    hist, 
+    bins, 
+    peak_ergs, 
+    search_width=600, 
+    threshold_overlap=200,
+    summing_method='sum_gaussian'
 ) -> List[float]:
 
     if len(peak_ergs) > 1:
@@ -881,10 +893,6 @@ def get_multipeak_area(
     # get midpoints of every bin
     xvals = np.diff(bins) / 2 + bins[:-1]
 
-    print("libra-toolbox bins length:", len(bins))
-    print("libra-toolbox xvals:", xvals)
-    print("libra-toolbox hist[0, -1]: ", hist[0], hist[-1])
-    print("libra-toolbox peak_ergs:", peak_ergs)
 
     parameters, covariance = fit_peak_gauss(
         hist, xvals, peak_ergs, search_width=search_width
@@ -908,17 +916,25 @@ def get_multipeak_area(
         # Use unimodal gaussian to estimate counts from just one peak
         peak_params = [parameters[0], parameters[1], parameters[2 + 3 * i], mean, sigma]
         all_peak_params += [peak_params]
-        gross_area = np.trapz(
-            gauss(xvals[peak_start:peak_end], *peak_params),
-            x=xvals[peak_start:peak_end],
-        )
 
+        if summing_method == 'sum_gaussian':
+            gross_area = np.trapezoid(
+                gauss(xvals[peak_start:peak_end], *peak_params),
+                x=xvals[peak_start:peak_end],
+            )
+        elif summing_method == 'sum_histogram':
+            gross_area = np.trapezoid(
+                hist[peak_start:peak_end],
+                x=xvals[peak_start:peak_end],
+            )
         # Cut off trapezoidal area due to compton scattering and noise
-        trap_cutoff_area = np.trapz(
+        trap_cutoff_area = np.trapezoid(
             parameters[0] + parameters[1] * xvals[peak_start:peak_end],
             x=xvals[peak_start:peak_end],
         )
         area = gross_area - trap_cutoff_area
+
+        print("TOOLBOX: Peak energy:", peak_ergs[i], " Gross area:", gross_area, " Cutoff area:", trap_cutoff_area, " Net area:", area)
         areas += [area]
 
     return areas

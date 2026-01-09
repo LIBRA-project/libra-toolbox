@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import List
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional
 import datetime
 import numpy as np
 
@@ -26,13 +26,12 @@ class Nuclide:
     """
 
     name: str
-    energy: List[float] = None
-    intensity: List[float] = None
-    half_life: float = None
-    atomic_mass: float = None
+    energy: Optional[List[float]] = None
+    intensity: Optional[List[float]] = None
+    half_life: Optional[float] = None
+    atomic_mass: Optional[float] = None
     abundance: float = 1.00
-    peak_widths: List[float] = None
-    calibrated_peak_widths: List[float] = None
+    _uncalibrated_measured_energies: Optional[Dict] = field(default=None, repr=False)
 
     @property
     def decay_constant(self):
@@ -40,6 +39,19 @@ class Nuclide:
         Returns the decay constant of the nuclide in 1/s.
         """
         return np.log(2) / self.half_life
+    
+    def calibrated_measured_energies(self, channel_nb, calibration_coeffs):
+        """
+        Returns the calibrated measured energies of the nuclide in keV.
+        """
+        if self._uncalibrated_measured_energies is None:
+            return None
+        else:
+            uncalibrated = np.array(
+                self._uncalibrated_measured_energies.get(channel_nb, []),
+                dtype=float
+            )
+            return np.polyval(calibration_coeffs, uncalibrated)
 
 
 # ba133 = Nuclide(

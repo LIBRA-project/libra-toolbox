@@ -791,13 +791,19 @@ def test_get_multipeak_area_two_close_peaks():
 
     hist, bin_edges = np.histogram(energy_events, bins=np.arange(0, 3000))
 
+
     # RUN
-    areas = compass.get_multipeak_area(hist, bin_edges, peak_ergs=[energy1, energy2])
+    areas = compass.get_multipeak_area(hist, 
+                                       bin_edges, 
+                                       peak_ergs=[energy1, energy2],
+                                       search_width=200)
+    
 
     # TEST
     expected_area_peak_1 = nb_events_peak1
     expected_area_peak_2 = nb_events_peak2
     for i, expected_area in enumerate([expected_area_peak_1, expected_area_peak_2]):
+        print(f"Peak {i+1}: Computed area = {areas[i]}, Expected area = {expected_area}")
         assert np.isclose(areas[i], expected_area, rtol=1e-2)
 
 

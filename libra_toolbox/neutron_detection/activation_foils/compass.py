@@ -451,10 +451,15 @@ class CheckSourceMeasurement(Measurement):
 
         calibrated_bin_edges = np.polyval(calibration_coeffs, bin_edges)
 
+        peak_energies = self.check_source.nuclide.calibrated_measured_energies(channel_nb, calibration_coeffs)
+        if peak_energies is None:
+            print("TOOLBOX: No calibrated measured energies found for the check source. Cannot compute detection efficiency.")
+            peak_energies = self.check_source.nuclide.energy
+
         nb_counts_measured = get_multipeak_area(
             hist,
             calibrated_bin_edges,
-            self.check_source.nuclide.calibrated_measured_energies(channel_nb, calibration_coeffs),
+            peak_energies,
             search_width=search_width,
             threshold_overlap=threshold_overlap,
             summing_method=summing_method,
@@ -814,7 +819,9 @@ def gauss(x, b, m, *args):
     return out
 
 
-def fit_peak_gauss(hist, xvals, peak_ergs, search_width=600, threshold_overlap=200):
+def fit_peak_gauss(hist, xvals, peak_ergs, 
+                   search_width=600, 
+                   threshold_overlap=200):
 
     if len(peak_ergs) > 1:
         if np.max(peak_ergs) - np.min(peak_ergs) > threshold_overlap:
@@ -852,6 +859,8 @@ def fit_peak_gauss(hist, xvals, peak_ergs, search_width=600, threshold_overlap=2
         p0=guess_parameters,
     )
 
+    print("Fitted parameters:", parameters)
+
     return parameters, covariance
 
 
@@ -861,31 +870,29 @@ def get_multipeak_area(
     peak_ergs, 
     search_width=600, 
     threshold_overlap=200,
-    summing_method='sum_gaussian'
+    summing_method='sum_gaussian',
+    ax=None,
 ) -> List[float]:
+    
+    print(peak_ergs)
 
     if len(peak_ergs) > 1:
         if np.max(peak_ergs) - np.min(peak_ergs) > threshold_overlap:
             areas = []
             for p, peak in enumerate(peak_ergs):
-                if isinstance(search_width, (np.ndarray, list)):
-                    search_w = int(search_width[p])
-                else:
-                    search_w = int(search_width)
                 area = get_multipeak_area(
                     hist,
                     bins,
                     [peak],
-                    search_width=search_w,
+                    search_width=search_width,
                     threshold_overlap=threshold_overlap,
+                    summing_method=summing_method
                 )
                 areas += area
             return areas
     
-    if isinstance(search_width, (np.ndarray, list)):
-        search_width = int(search_width[0])
 
-    # get midpoints of every bin
+    # get midpoints of every binß
     xvals = np.diff(bins) / 2 + bins[:-1]
 
 

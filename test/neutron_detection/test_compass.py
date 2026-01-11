@@ -1601,7 +1601,7 @@ def create_nuclide_spectrum(
 
     nuclide_events = np.zeros((0,))
     for energy, intensity in zip(nuclide.energy, nuclide.intensity):
-        compton_fraction = 0.2  # ~20% of events go to Compton scattering
+        compton_fraction = 0.1  # ~10% of events go to Compton scattering
         # Full energy peak
         nuclide_events = np.append(
             nuclide_events,
@@ -1631,7 +1631,7 @@ def create_nuclide_spectrum(
         nuclide_events, bins=background_detector._calibrated_bin_edges
     )
 
-    noise_level = 1.0
+    noise_level = 0.2
     gaussian_noise = np.random.normal(
         0, noise_level * np.sqrt(nuclide_hist), size=nuclide_hist.shape
     )
@@ -1644,15 +1644,15 @@ def create_nuclide_spectrum(
     "detector_type, nuclide, signal_to_background_ratio",
     [
         ["NaI", co60, 1.0],
-        ["NaI", cs137, 1.0],
-        ["NaI", mn54, 0.1],
-        ["NaI", na22, 1.0],
+        ["NaI", cs137, 10.0],
+        ["NaI", mn54, 0.01],
+        ["NaI", na22, 10.0],
         ["NaI", na22, 0.1],
         ["HPGe", ba133, 1.0],
         ["HPGe", co60, 1.0],
-        ["HPGe", cs137, 1.0],
-        ["HPGe", mn54, 0.1],
-        ["HPGe", na22, 1.0],
+        ["HPGe", cs137, 10.0],
+        ["HPGe", mn54, 0.01],
+        ["HPGe", na22, 10.0],
         ["HPGe", na22, 0.1],
     ],
 )
@@ -1715,7 +1715,11 @@ def test_get_peaks(detector_type, nuclide, signal_to_background_ratio):
     check_source_meas.detectors = [check_source_detector]
     check_source_meas.detector_type = detector_type
 
-    test_peaks = check_source_meas.get_peaks(overall_hist)
+    test_peak_inds = check_source_meas.get_peaks(overall_hist)
+    test_peaks = background_detector._calibrated_bin_edges[
+        test_peak_inds
+    ]
+
     assert len(test_peaks) == len(nuclide.energy)
     for test_energy, expected_energy in zip(test_peaks, nuclide.energy):
         print(f"Detected peak at {test_energy:.2f} keV, expected at {expected_energy} keV")

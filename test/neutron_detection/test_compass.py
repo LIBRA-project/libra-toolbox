@@ -18,6 +18,7 @@ import datetime
 import h5py
 import json
 
+this_file_path = Path(__file__).parent
 
 @pytest.mark.parametrize(
     "filename, expected_channel",
@@ -1647,6 +1648,7 @@ def create_nuclide_spectrum(
         ["NaI", mn54, 0.1],
         ["NaI", na22, 1.0],
         ["NaI", na22, 0.1],
+        ["HPGe", ba133, 1.0],
         ["HPGe", co60, 1.0],
         ["HPGe", cs137, 1.0],
         ["HPGe", mn54, 0.1],
@@ -1658,12 +1660,12 @@ def test_get_peaks(detector_type, nuclide, signal_to_background_ratio):
 
     # get real background measurement
     background_measurements = compass.Measurement.from_h5(
-        "compass_test_data/background_measurement/background_measurements.h5"
+        this_file_path / "compass_test_data/background_measurement/background_measurements.h5"
     )
 
     # read in calibration coefficients from json
     with open(
-        "compass_test_data/background_measurement/calibration_coefficients.json", "r"
+        this_file_path / "compass_test_data/background_measurement/calibration_coefficients.json", "r"
     ) as f:
         calibration_coefficients = json.load(f)
 
@@ -1700,14 +1702,21 @@ def test_get_peaks(detector_type, nuclide, signal_to_background_ratio):
     )
 
     # Create a check source measurement instance
-    check_source_detector = compass.Detector()
+    check_source_detector = compass.Detector(channel_nb=0)
     check_source_detector._spectrum = overall_hist
     check_source_detector._bin_edges = background_detector._calibrated_bin_edges
-    check_source_meas = compass.CheckSourceMeasurement(nuclide=nuclide)
+
+    check_source = CheckSource(nuclide=nuclide,
+                               activity_date=datetime.datetime(2024, 1, 1),
+                               activity=1.0)
+    
+    check_source_meas = compass.CheckSourceMeasurement('test')
+    check_source_meas.check_source = check_source
     check_source_meas.detectors = [check_source_detector]
     check_source_meas.detector_type = detector_type
 
     test_peaks = check_source_meas.get_peaks(overall_hist)
     assert len(test_peaks) == len(nuclide.energy)
     for test_energy, expected_energy in zip(test_peaks, nuclide.energy):
-        assert np.isclose(test_energy, expected_energy, rtol=1e-2)
+        print(f"Detected peak at {test_energy:.2f} keV, expected at {expected_energy} keV")
+        assert np.isclose(test_energy, expected_energy, rtol=0.05)

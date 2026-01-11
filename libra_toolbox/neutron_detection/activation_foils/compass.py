@@ -531,7 +531,7 @@ class CheckSourceMeasurement(Measurement):
                 height = 0.60 * np.max(hist[start_index:])
                 prominence = None
             elif self.check_source.nuclide == ba133:
-                start_index = 10
+                start_index = 150
                 height = 0.10 * np.max(hist[start_index:])
                 prominence = 0.10 * np.max(hist[start_index:])
             elif self.check_source.nuclide == mn54:
@@ -552,6 +552,7 @@ class CheckSourceMeasurement(Measurement):
                 height = 0.5 * np.max(hist[start_index:])
                 prominence = 0.5 * np.max(hist[start_index:])
             elif self.check_source.nuclide == ba133:
+                print("ToOLBOX: Using default peak finding parameters for Ba-133 with HPGe detector.")
                 start_index = 150
                 height = 0.10 * np.max(hist[start_index:])
                 prominence = 0.10 * np.max(hist[start_index:])

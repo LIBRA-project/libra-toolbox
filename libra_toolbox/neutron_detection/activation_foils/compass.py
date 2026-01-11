@@ -522,8 +522,8 @@ class CheckSourceMeasurement(Measurement):
             distance = 30
             if self.check_source.nuclide == na22:
                 start_index = 100
-                height = 0.1 * np.max(hist[start_index:])
-                prominence = 0.1 * np.max(hist[start_index:])
+                height = 0.4 * np.max(hist[start_index:])
+                prominence = 0.4 * np.max(hist[start_index:])
                 width = [10, 150]
                 distance = 30
             elif self.check_source.nuclide == co60:
@@ -531,7 +531,7 @@ class CheckSourceMeasurement(Measurement):
                 height = 0.60 * np.max(hist[start_index:])
                 prominence = None
             elif self.check_source.nuclide == ba133:
-                start_index = 10
+                start_index = 150
                 height = 0.10 * np.max(hist[start_index:])
                 prominence = 0.10 * np.max(hist[start_index:])
             elif self.check_source.nuclide == mn54:
@@ -545,8 +545,8 @@ class CheckSourceMeasurement(Measurement):
             distance = 100
             if self.check_source.nuclide == na22:
                 start_index = 100
-                height = 0.2 * np.max(hist[start_index:])
-                prominence = 0.2 * np.max(hist[start_index:])
+                height = 0.4 * np.max(hist[start_index:])
+                prominence = 0.4 * np.max(hist[start_index:])
                 distance = 100
             elif self.check_source.nuclide == co60:
                 height = 0.5 * np.max(hist[start_index:])
@@ -558,8 +558,8 @@ class CheckSourceMeasurement(Measurement):
                 distance = 10
             elif self.check_source.nuclide == mn54:
                 start_index = 400
-                height = 0.9 * np.max(hist[start_index:])
-                prominence = 0.9 * np.max(hist[start_index:])
+                height = 0.7 * np.max(hist[start_index:])
+                prominence = 0.7 * np.max(hist[start_index:])
                 distance = 100
         else:
             raise ValueError(
@@ -584,6 +584,10 @@ class CheckSourceMeasurement(Measurement):
             distance=distance,
         )
         peaks = np.array(peaks) + start_index
+
+        # special case for Mn-54, only keep the first high count energy peak
+        if self.check_source.nuclide == mn54 and len(peaks) > 1:
+            peaks = np.array([peaks[0]])
 
         return peaks
 
@@ -928,17 +932,17 @@ def get_multipeak_area(
         all_peak_params += [peak_params]
 
         if summing_method == 'sum_gaussian':
-            gross_area = np.trapezoid(
+            gross_area = np.trapz(
                 gauss(xvals[peak_start:peak_end], *peak_params),
                 x=xvals[peak_start:peak_end],
             )
         elif summing_method == 'sum_histogram':
-            gross_area = np.trapezoid(
+            gross_area = np.trapz(
                 hist[peak_start:peak_end],
                 x=xvals[peak_start:peak_end],
             )
         # Cut off trapezoidal area due to compton scattering and noise
-        trap_cutoff_area = np.trapezoid(
+        trap_cutoff_area = np.trapz(
             parameters[0] + parameters[1] * xvals[peak_start:peak_end],
             x=xvals[peak_start:peak_end],
         )

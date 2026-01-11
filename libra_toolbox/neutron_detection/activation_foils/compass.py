@@ -552,7 +552,6 @@ class CheckSourceMeasurement(Measurement):
                 height = 0.5 * np.max(hist[start_index:])
                 prominence = 0.5 * np.max(hist[start_index:])
             elif self.check_source.nuclide == ba133:
-                print("ToOLBOX: Using default peak finding parameters for Ba-133 with HPGe detector.")
                 start_index = 150
                 height = 0.10 * np.max(hist[start_index:])
                 prominence = 0.10 * np.max(hist[start_index:])
@@ -929,17 +928,17 @@ def get_multipeak_area(
         all_peak_params += [peak_params]
 
         if summing_method == 'sum_gaussian':
-            gross_area = np.trapezoid(
+            gross_area = np.trapz(
                 gauss(xvals[peak_start:peak_end], *peak_params),
                 x=xvals[peak_start:peak_end],
             )
         elif summing_method == 'sum_histogram':
-            gross_area = np.trapezoid(
+            gross_area = np.trapz(
                 hist[peak_start:peak_end],
                 x=xvals[peak_start:peak_end],
             )
         # Cut off trapezoidal area due to compton scattering and noise
-        trap_cutoff_area = np.trapezoid(
+        trap_cutoff_area = np.trapz(
             parameters[0] + parameters[1] * xvals[peak_start:peak_end],
             x=xvals[peak_start:peak_end],
         )

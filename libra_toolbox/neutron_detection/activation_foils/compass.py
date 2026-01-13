@@ -425,6 +425,11 @@ class CheckSourceMeasurement(Measurement):
     def get_calibrated_measured_energies(self, channel_nb: int, calibration_coeffs: np.ndarray) -> List[float]:
         """
         Returns the calibrated measured energies of the check source for a given channel number and calibration coefficients.
+        The reason this is needed is that due to imperfect calibration, the measured energy of the photopeaks may
+        not be the same as the actual energies of the photopeaks. This function applies the calibration coefficients 
+        to the uncalibrated measured energies to get the calibrated measured energies, so that when calculating the detector
+        efficiency with compute_detection_efficiency(), the correct energies are used to find the area under each peak and 
+        the expected number of counts.
 
         Args:
             channel_nb: channel number of the detector

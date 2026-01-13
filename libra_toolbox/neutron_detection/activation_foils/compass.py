@@ -522,8 +522,8 @@ class CheckSourceMeasurement(Measurement):
             distance = 30
             if self.check_source.nuclide == na22:
                 start_index = 100
-                height = 0.4 * np.max(hist[start_index:])
-                prominence = 0.4 * np.max(hist[start_index:])
+                height = 0.1 * np.max(hist[start_index:])
+                prominence = 0.1 * np.max(hist[start_index:])
                 width = [10, 150]
                 distance = 30
             elif self.check_source.nuclide == co60:

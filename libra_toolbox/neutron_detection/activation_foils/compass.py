@@ -459,7 +459,6 @@ class CheckSourceMeasurement(Measurement):
 
         peak_energies = self.check_source.nuclide.calibrated_measured_energies(channel_nb, calibration_coeffs)
         if peak_energies is None:
-            print("TOOLBOX: No calibrated measured energies found for the check source. Cannot compute detection efficiency.")
             peak_energies = self.check_source.nuclide.energy
 
         nb_counts_measured = get_multipeak_area(

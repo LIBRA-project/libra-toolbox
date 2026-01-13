@@ -988,10 +988,11 @@ def get_multipeak_area(
                 x=xvals[peak_start:peak_end],
             )
         elif summing_method == 'sum_histogram':
-            gross_area = np.trapezoid(
-                hist[peak_start:peak_end],
-                x=xvals[peak_start:peak_end],
-            )
+            gross_area = np.sum(
+                (
+                    hist[peak_start:peak_end]
+                    * np.diff(bins[peak_start:peak_end])
+            ))
         # Cut off trapezoidal area due to compton scattering and noise
         trap_cutoff_area = np.trapezoid(
             parameters[0] + parameters[1] * xvals[peak_start:peak_end],

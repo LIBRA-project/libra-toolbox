@@ -1030,7 +1030,6 @@ def get_events(directory: str) -> Tuple[Dict[int, np.ndarray], Dict[int, np.ndar
         time_values[ch] = np.empty(0)
         energy_values[ch] = np.empty(0)
         for i, filename in enumerate(data_filenames[ch]):
-            # print(f'Processing File {i}')
 
             csv_file_path = os.path.join(directory, filename)
 

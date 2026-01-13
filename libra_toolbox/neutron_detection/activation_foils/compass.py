@@ -768,6 +768,22 @@ def get_calibration_data(
     channel_nb: int,
     peak_kwargs: dict = None,
 ):
+    """
+    Finds the radionuclide peaks from the check source measurements and returns
+    a list of the energy channels and a list of the actual energies associated 
+    with those peaks.
+    
+    check_source_measurements: list of CheckSourceMeasurement objects
+    background_measurement: Measurement object for the background measurement
+    channel_nb: channel number of the detector to use for calibration
+    peak_kwargs: optional dictionary of keyword arguments to pass to the function 
+        get_peaks() for each check source measurement, with the check source nuclide 
+        name as key.
+        Example: peak_kwargs = {
+            'Na-22': {'start_index': 100, 'height': 0.1 * np.max(hist)},
+            'Co-60': {'start_index': 400, 'height': 0.6 * np.max(hist)},
+        }
+    """
     background_detector = [
         detector
         for detector in background_measurement.detectors

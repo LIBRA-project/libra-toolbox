@@ -54,12 +54,6 @@ class Nuclide:
             return np.polyval(calibration_coeffs, uncalibrated)
 
 
-# ba133 = Nuclide(
-#     name="Ba133",
-#     energy=[80.9979, 276.3989, 302.8508, 356.0129, 383.8485],
-#     intensity=[0.329, 0.0716, 0.1834, 0.6205, 0.0894],
-#     half_life=10.551 * 365.25 * 24 * 3600,
-# )
 ba133 = Nuclide(
     name="Ba133",
     energy=[276.3989, 302.8508, 356.0129, 383.8485],

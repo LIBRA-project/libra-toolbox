@@ -409,6 +409,38 @@ class Measurement:
 
 class CheckSourceMeasurement(Measurement):
     check_source: CheckSource
+    _uncalibrated_measured_energies: Dict[int, List[float]] = None
+    """ 
+    check_source: CheckSource object containing the information of the check source used in the measurement.
+    _uncalibrated_measured_energies: Dictionary to store the uncalibrated measured energies of the check source photopeaks
+                                    for each channel number. The keys are the channel numbers and the values are lists of 
+                                    uncalibrated measured energies of the photopeaks for that detector channel.
+                                    This is used to store the energy channels associated with each photopeak
+                                    for later use in calculating the area under each peak and the detection efficiency
+                                    in compute_detection_efficiency(). This is necessary because the energy channels 
+                                    of the photopeaks may not be the same as the actual energies of the photopeaks 
+                                    due to the calibration process.
+    """
+
+    def get_calibrated_measured_energies(self, channel_nb: int, calibration_coeffs: np.ndarray) -> List[float]:
+        """
+        Returns the calibrated measured energies of the check source for a given channel number and calibration coefficients.
+
+        Args:
+            channel_nb: channel number of the detector
+            calibration_coeffs: polynomial coefficients for energy calibration
+        Returns:
+            List of calibrated measured photopeak energies in keV.
+            Should be the same length as self.check_source.nuclide.energy
+        """
+        if self._uncalibrated_measured_energies is None:
+            return None
+        else:
+            uncalibrated = np.array(
+                self._uncalibrated_measured_energies.get(channel_nb, []),
+                dtype=float
+            )
+            return np.polyval(calibration_coeffs, uncalibrated)
 
     def compute_detection_efficiency(
         self,
@@ -457,7 +489,7 @@ class CheckSourceMeasurement(Measurement):
 
         calibrated_bin_edges = np.polyval(calibration_coeffs, bin_edges)
 
-        peak_energies = self.check_source.nuclide.calibrated_measured_energies(channel_nb, calibration_coeffs)
+        peak_energies = self.get_calibrated_measured_energies(channel_nb, calibration_coeffs)
         if peak_energies is None:
             peak_energies = self.check_source.nuclide.energy
 
@@ -819,9 +851,9 @@ def get_calibration_data(
             calibration_channels += list(peaks)
             calibration_energies += measurement.check_source.nuclide.energy
             # Store the uncalibrated measured energies in the measurement object for later use
-            if measurement.check_source.nuclide._uncalibrated_measured_energies is None:
-                measurement.check_source.nuclide._uncalibrated_measured_energies = {}
-            measurement.check_source.nuclide._uncalibrated_measured_energies[channel_nb] = list(peaks)
+            if measurement._uncalibrated_measured_energies is None:
+                measurement._uncalibrated_measured_energies = {}
+            measurement._uncalibrated_measured_energies[channel_nb] = list(peaks)
 
     inds = np.argsort(calibration_channels)
     calibration_channels = np.array(calibration_channels)[inds]

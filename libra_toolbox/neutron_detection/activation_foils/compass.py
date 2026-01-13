@@ -890,7 +890,7 @@ def get_multipeak_area(
     if len(peak_ergs) > 1:
         if np.max(peak_ergs) - np.min(peak_ergs) > threshold_overlap:
             areas = []
-            for p, peak in enumerate(peak_ergs):
+            for peak in peak_ergs:
                 area = get_multipeak_area(
                     hist,
                     bins,

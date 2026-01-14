@@ -829,7 +829,7 @@ def get_calibration_data(
 
     calibration_energies = []
     calibration_channels = []
-
+    found_a_nuclide = False
     for measurement in check_source_measurements:
         for detector in measurement.detectors:
             if detector.channel_nb != channel_nb:
@@ -839,7 +839,6 @@ def get_calibration_data(
                 background_detector, bins=None
             )
             kwargs = {}
-            found_a_nuclide = False
             if peak_kwargs is not None:
                 if measurement.check_source.nuclide in peak_kwargs.keys():
                     kwargs = peak_kwargs[measurement.check_source.nuclide]
@@ -860,6 +859,10 @@ def get_calibration_data(
                 measurement._uncalibrated_measured_energies = {}
             measurement._uncalibrated_measured_energies[channel_nb] = list(peaks)
 
+    if not found_a_nuclide and peak_kwargs is not None:
+        warnings.warn(
+            "No check source nuclide found in the provided peak_kwargs. The default peak finding parameters will be used for all check sources."
+        )
     inds = np.argsort(calibration_channels)
     calibration_channels = np.array(calibration_channels)[inds]
     calibration_energies = np.array(calibration_energies)[inds]

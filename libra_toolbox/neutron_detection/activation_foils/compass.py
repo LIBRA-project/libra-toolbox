@@ -991,7 +991,7 @@ def get_multipeak_area(
             gross_area = np.sum(
                 (
                     hist[peak_start:peak_end]
-                    * np.diff(bins[peak_start:peak_end])
+                    * np.diff(bins[peak_start:peak_end+1])
             ))
         # Cut off trapezoidal area due to compton scattering and noise
         trap_cutoff_area = np.trapezoid(

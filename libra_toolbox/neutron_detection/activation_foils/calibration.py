@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import List
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional
 import datetime
 import numpy as np
 
@@ -26,10 +26,10 @@ class Nuclide:
     """
 
     name: str
-    energy: List[float] = None
-    intensity: List[float] = None
-    half_life: float = None
-    atomic_mass: float = None
+    energy: Optional[List[float]] = None
+    intensity: Optional[List[float]] = None
+    half_life: Optional[float] = None
+    atomic_mass: Optional[float] = None
     abundance: float = 1.00
 
     @property
@@ -42,8 +42,8 @@ class Nuclide:
 
 ba133 = Nuclide(
     name="Ba133",
-    energy=[80.9979, 276.3989, 302.8508, 356.0129, 383.8485],
-    intensity=[0.329, 0.0716, 0.1834, 0.6205, 0.0894],
+    energy=[276.3989, 302.8508, 356.0129, 383.8485],
+    intensity=[0.0716, 0.1834, 0.6205, 0.0894],
     half_life=10.551 * 365.25 * 24 * 3600,
 )
 co60 = Nuclide(

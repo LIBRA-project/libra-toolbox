@@ -169,6 +169,7 @@ class Measurement:
     stop_time: Union[datetime.datetime, None]
     name: str
     detectors: List[Detector]
+    detector_type: str = "NaI"  # Default detector type, can be 'NaI' or 'HPGe'
 
     def __init__(self, name: str) -> None:
         """
@@ -408,6 +409,43 @@ class Measurement:
 
 class CheckSourceMeasurement(Measurement):
     check_source: CheckSource
+    _uncalibrated_measured_energies: Dict[int, List[float]] = None
+    """ 
+    check_source: CheckSource object containing the information of the check source used in the measurement.
+    _uncalibrated_measured_energies: Dictionary to store the uncalibrated measured energies of the check source photopeaks
+                                    for each channel number. The keys are the channel numbers and the values are lists of 
+                                    uncalibrated measured energies of the photopeaks for that detector channel.
+                                    This is used to store the energy channels associated with each photopeak
+                                    for later use in calculating the area under each peak and the detection efficiency
+                                    in compute_detection_efficiency(). This is necessary because the energy channels 
+                                    of the photopeaks may not be the same as the actual energies of the photopeaks 
+                                    due to the calibration process.
+    """
+
+    def get_calibrated_measured_energies(self, channel_nb: int, calibration_coeffs: np.ndarray) -> List[float]:
+        """
+        Returns the calibrated measured energies of the check source for a given channel number and calibration coefficients.
+        The reason this is needed is that due to imperfect calibration, the measured energy of the photopeaks may
+        not be the same as the actual energies of the photopeaks. This function applies the calibration coefficients 
+        to the uncalibrated measured energies to get the calibrated measured energies, so that when calculating the detector
+        efficiency with compute_detection_efficiency(), the correct energies are used to find the area under each peak and 
+        the expected number of counts.
+
+        Args:
+            channel_nb: channel number of the detector
+            calibration_coeffs: polynomial coefficients for energy calibration
+        Returns:
+            List of calibrated measured photopeak energies in keV.
+            Should be the same length as self.check_source.nuclide.energy
+        """
+        if self._uncalibrated_measured_energies is None:
+            return None
+        else:
+            uncalibrated = np.array(
+                self._uncalibrated_measured_energies.get(channel_nb, []),
+                dtype=float
+            )
+            return np.polyval(calibration_coeffs, uncalibrated)
 
     def compute_detection_efficiency(
         self,
@@ -415,6 +453,8 @@ class CheckSourceMeasurement(Measurement):
         calibration_coeffs: np.ndarray,
         channel_nb: int,
         search_width: float = 800,
+        threshold_overlap: float = 200,
+        summing_method: str = 'sum_gaussian',
     ) -> Union[np.ndarray, float]:
         """
         Computes the detection efficiency of a check source given the
@@ -433,6 +473,12 @@ class CheckSourceMeasurement(Measurement):
             calibration_coeffs: the calibration polynomial coefficients for the detector
             channel_nb: the channel number of the detector
             search_width: the search width for the peak fitting
+            threshold_overlap: the threshold width for considering two peaks as overlapping
+            summing_method: method to sum counts under the peak, either 'sum_gaussian' or 'sum_histogram'
+                            with 'sum_gaussian' fitting a Gaussian to the peak and integrating it, 
+                            and with 'sum_histogram' summing the histogram counts under the peak.
+                            'sum_histogram' SHOULD NOT BE USED for OVERLAPPING peaks as it will
+                            overestimate the counts.
 
         Returns:
             the detection efficiency
@@ -448,11 +494,17 @@ class CheckSourceMeasurement(Measurement):
 
         calibrated_bin_edges = np.polyval(calibration_coeffs, bin_edges)
 
+        peak_energies = self.get_calibrated_measured_energies(channel_nb, calibration_coeffs)
+        if peak_energies is None:
+            peak_energies = self.check_source.nuclide.energy
+
         nb_counts_measured = get_multipeak_area(
             hist,
             calibrated_bin_edges,
-            self.check_source.nuclide.energy,
+            peak_energies,
             search_width=search_width,
+            threshold_overlap=threshold_overlap,
+            summing_method=summing_method,
         )
 
         nb_counts_measured = np.array(nb_counts_measured)
@@ -497,26 +549,58 @@ class CheckSourceMeasurement(Measurement):
             the peak indices in ``hist``
         """
 
-        # peak finding parameters
-        start_index = 100
-        prominence = 0.10 * np.max(hist[start_index:])
-        height = 0.10 * np.max(hist[start_index:])
-        width = [10, 150]
-        distance = 30
-        if self.check_source.nuclide == na22:
+        if self.detector_type.lower() == 'nai':
+            # peak finding parameters
             start_index = 100
-            height = 0.1 * np.max(hist[start_index:])
-            prominence = 0.1 * np.max(hist[start_index:])
+            prominence = 0.10 * np.max(hist[start_index:])
+            height = 0.10 * np.max(hist[start_index:])
             width = [10, 150]
             distance = 30
-        elif self.check_source.nuclide == co60:
-            start_index = 400
-            height = 0.60 * np.max(hist[start_index:])
-            prominence = None
-        elif self.check_source.nuclide == ba133:
-            width = [10, 200]
-        elif self.check_source.nuclide == mn54:
-            height = 0.6 * np.max(hist[start_index:])
+            if self.check_source.nuclide == na22:
+                start_index = 100
+                height = 0.1 * np.max(hist[start_index:])
+                prominence = 0.1 * np.max(hist[start_index:])
+                width = [10, 150]
+                distance = 30
+            elif self.check_source.nuclide == co60:
+                start_index = 400
+                height = 0.60 * np.max(hist[start_index:])
+                prominence = None
+            elif self.check_source.nuclide == ba133:
+                start_index = 150
+                height = 0.10 * np.max(hist[start_index:])
+                prominence = 0.10 * np.max(hist[start_index:])
+            elif self.check_source.nuclide == mn54:
+                height = 0.6 * np.max(hist[start_index:])
+        elif self.detector_type.lower() == 'hpge':
+            # peak finding parameters for HPGe detectors
+            start_index = 10
+            prominence = 0.50 * np.max(hist[start_index:])
+            height = 0.50 * np.max(hist[start_index:])
+            width = [2, 50]
+            distance = 100
+            if self.check_source.nuclide == na22:
+                start_index = 100
+                height = 0.4 * np.max(hist[start_index:])
+                prominence = 0.4 * np.max(hist[start_index:])
+                distance = 100
+            elif self.check_source.nuclide == co60:
+                height = 0.5 * np.max(hist[start_index:])
+                prominence = 0.5 * np.max(hist[start_index:])
+            elif self.check_source.nuclide == ba133:
+                start_index = 150
+                height = 0.10 * np.max(hist[start_index:])
+                prominence = 0.10 * np.max(hist[start_index:])
+                distance = 10
+            elif self.check_source.nuclide == mn54:
+                start_index = 400
+                height = 0.7 * np.max(hist[start_index:])
+                prominence = 0.7 * np.max(hist[start_index:])
+                distance = 100
+        else:
+            raise ValueError(
+                f"Unknown detector type: {self.detector_type}. Supported types are 'NaI' and 'HPGe'."
+            )
 
         # update the parameters if kwargs are provided
         if kwargs:
@@ -537,6 +621,10 @@ class CheckSourceMeasurement(Measurement):
         )
         peaks = np.array(peaks) + start_index
 
+        # special case for Mn-54, only keep the first high count energy peak
+        if self.check_source.nuclide == mn54 and len(peaks) > 1:
+            peaks = np.array([peaks[0]])
+
         return peaks
 
 
@@ -550,6 +638,7 @@ class SampleMeasurement(Measurement):
         calibration_coeffs,
         channel_nb: int,
         search_width: float = 800,
+        summing_method: str = 'sum_gaussian',
     ):
         # find right background detector
 
@@ -569,6 +658,7 @@ class SampleMeasurement(Measurement):
             calibrated_bin_edges,
             energy,
             search_width=search_width,
+            summing_method=summing_method,
         )
 
         nb_counts_measured = np.array(nb_counts_measured)
@@ -713,7 +803,24 @@ def get_calibration_data(
     check_source_measurements: List[CheckSourceMeasurement],
     background_measurement: Measurement,
     channel_nb: int,
+    peak_kwargs: dict = None,
 ):
+    """
+    Finds the radionuclide peaks from the check source measurements and returns
+    a list of the energy channels and a list of the actual energies associated 
+    with those peaks.
+    
+    check_source_measurements: list of CheckSourceMeasurement objects
+    background_measurement: Measurement object for the background measurement
+    channel_nb: channel number of the detector to use for calibration
+    peak_kwargs: optional dictionary of keyword arguments to pass to the function 
+        get_peaks() for each check source measurement, with the check source nuclide 
+        name as key.
+        Example: peak_kwargs = {
+            'Na-22': {'start_index': 100, 'height': 0.1 * np.max(hist)},
+            'Co-60': {'start_index': 400, 'height': 0.6 * np.max(hist)},
+        }
+    """
     background_detector = [
         detector
         for detector in background_measurement.detectors
@@ -722,7 +829,7 @@ def get_calibration_data(
 
     calibration_energies = []
     calibration_channels = []
-
+    found_a_nuclide = False
     for measurement in check_source_measurements:
         for detector in measurement.detectors:
             if detector.channel_nb != channel_nb:
@@ -731,16 +838,31 @@ def get_calibration_data(
             hist, bin_edges = detector.get_energy_hist_background_substract(
                 background_detector, bins=None
             )
-            peaks_ind = measurement.get_peaks(hist)
+            kwargs = {}
+            if peak_kwargs is not None:
+                if measurement.check_source.nuclide in peak_kwargs.keys():
+                    kwargs = peak_kwargs[measurement.check_source.nuclide]
+                    found_a_nuclide = True
+
+            peaks_ind = measurement.get_peaks(hist, **kwargs)
             peaks = bin_edges[peaks_ind]
 
             if len(peaks) != len(measurement.check_source.nuclide.energy):
                 raise ValueError(
-                    f"SciPy find_peaks() found {len(peaks)} photon peaks, while {len(measurement.check_source.nuclide.energy)} were expected"
+                    f"SciPy find_peaks() found {len(peaks)} photon peaks, while {len(measurement.check_source.nuclide.energy)} were expected",
+                    f" peaks found: {peaks} for {measurement.check_source.nuclide.name}",
                 )
             calibration_channels += list(peaks)
             calibration_energies += measurement.check_source.nuclide.energy
+            # Store the uncalibrated measured energies in the measurement object for later use
+            if measurement._uncalibrated_measured_energies is None:
+                measurement._uncalibrated_measured_energies = {}
+            measurement._uncalibrated_measured_energies[channel_nb] = list(peaks)
 
+    if not found_a_nuclide and peak_kwargs is not None:
+        warnings.warn(
+            "No check source nuclide found in the provided peak_kwargs. The default peak finding parameters will be used for all check sources."
+        )
     inds = np.argsort(calibration_channels)
     calibration_channels = np.array(calibration_channels)[inds]
     calibration_energies = np.array(calibration_energies)[inds]
@@ -763,7 +885,9 @@ def gauss(x, b, m, *args):
     return out
 
 
-def fit_peak_gauss(hist, xvals, peak_ergs, search_width=600, threshold_overlap=200):
+def fit_peak_gauss(hist, xvals, peak_ergs, 
+                   search_width=600, 
+                   threshold_overlap=200):
 
     if len(peak_ergs) > 1:
         if np.max(peak_ergs) - np.min(peak_ergs) > threshold_overlap:
@@ -772,17 +896,18 @@ def fit_peak_gauss(hist, xvals, peak_ergs, search_width=600, threshold_overlap=2
             )
 
     search_start = np.argmin(
-        np.abs((peak_ergs[0] - search_width / (2 * len(peak_ergs))) - xvals)
+        np.abs((peak_ergs[0] - search_width / ( len(peak_ergs))) - xvals)
     )
     search_end = np.argmin(
-        np.abs((peak_ergs[-1] + search_width / (2 * len(peak_ergs))) - xvals)
+        np.abs((peak_ergs[-1] + search_width / (len(peak_ergs))) - xvals)
     )
 
     slope_guess = (hist[search_end] - hist[search_start]) / (
         xvals[search_end] - xvals[search_start]
     )
 
-    guess_parameters = [0, slope_guess]
+    # guess_parameters = [0, slope_guess]
+    guess_parameters = [0, 0]
 
     for i in range(len(peak_ergs)):
         peak_ind = np.argmin(np.abs((peak_ergs[i]) - xvals))
@@ -792,6 +917,7 @@ def fit_peak_gauss(hist, xvals, peak_ergs, search_width=600, threshold_overlap=2
             search_width / (3 * len(peak_ergs)),
         ]
 
+
     parameters, covariance = curve_fit(
         gauss,
         xvals[search_start:search_end],
@@ -799,12 +925,22 @@ def fit_peak_gauss(hist, xvals, peak_ergs, search_width=600, threshold_overlap=2
         p0=guess_parameters,
     )
 
+    print("Fitted parameters:", parameters)
+
     return parameters, covariance
 
 
 def get_multipeak_area(
-    hist, bins, peak_ergs, search_width=600, threshold_overlap=200
+    hist, 
+    bins, 
+    peak_ergs, 
+    search_width=600, 
+    threshold_overlap=200,
+    summing_method='sum_gaussian',
+    ax=None,
 ) -> List[float]:
+    
+    print(peak_ergs)
 
     if len(peak_ergs) > 1:
         if np.max(peak_ergs) - np.min(peak_ergs) > threshold_overlap:
@@ -816,12 +952,15 @@ def get_multipeak_area(
                     [peak],
                     search_width=search_width,
                     threshold_overlap=threshold_overlap,
+                    summing_method=summing_method
                 )
                 areas += area
             return areas
+    
 
-    # get midpoints of every bin
+    # get midpoints of every binß
     xvals = np.diff(bins) / 2 + bins[:-1]
+
 
     parameters, covariance = fit_peak_gauss(
         hist, xvals, peak_ergs, search_width=search_width
@@ -845,17 +984,25 @@ def get_multipeak_area(
         # Use unimodal gaussian to estimate counts from just one peak
         peak_params = [parameters[0], parameters[1], parameters[2 + 3 * i], mean, sigma]
         all_peak_params += [peak_params]
-        gross_area = np.trapz(
-            gauss(xvals[peak_start:peak_end], *peak_params),
-            x=xvals[peak_start:peak_end],
-        )
 
+        if summing_method == 'sum_gaussian':
+            gross_area = np.trapezoid(
+                gauss(xvals[peak_start:peak_end], *peak_params),
+                x=xvals[peak_start:peak_end],
+            )
+        elif summing_method == 'sum_histogram':
+            gross_area = np.sum(
+                (
+                    hist[peak_start:peak_end]
+                    * np.diff(bins[peak_start:peak_end+1])
+            ))
         # Cut off trapezoidal area due to compton scattering and noise
-        trap_cutoff_area = np.trapz(
+        trap_cutoff_area = np.trapezoid(
             parameters[0] + parameters[1] * xvals[peak_start:peak_end],
             x=xvals[peak_start:peak_end],
         )
         area = gross_area - trap_cutoff_area
+
         areas += [area]
 
     return areas
@@ -939,7 +1086,6 @@ def get_events(directory: str) -> Tuple[Dict[int, np.ndarray], Dict[int, np.ndar
         time_values[ch] = np.empty(0)
         energy_values[ch] = np.empty(0)
         for i, filename in enumerate(data_filenames[ch]):
-            print(f'Processing File {i}')
 
             csv_file_path = os.path.join(directory, filename)
 

@@ -8,6 +8,8 @@ import datetime
 import uproot
 import glob
 import h5py
+import xml.etree.ElementTree as ET
+import re
 
 import warnings
 from libra_toolbox.neutron_detection.activation_foils.calibration import (
@@ -224,6 +226,19 @@ class Measurement:
         else:
             root_filename = None
             print("No root file found, assuming all counts are live")
+        
+        # Get energy channel bins for each detector from the settings.xml file if it exists, otherwise assume 4096 bins
+        # search for settings.xml file in source_dir
+        settings_file = Path(source_dir).parent / "settings.xml"
+        if os.path.isfile(settings_file):
+            energy_bins = get_spectrum_nbins(settings_file)
+            print(f"Found settings.xml file. Using energy bins from file: {energy_bins}")
+        else:
+            print("No settings.xml file found. Assuming 4096 energy bins.")
+            print(os.listdir(Path(source_dir).parent))
+            energy_bins = None
+        if not energy_bins:
+            energy_bins = 4096
 
         for detector in detectors:
             detector.events = np.column_stack(
@@ -247,6 +262,7 @@ class Measurement:
                 ) * ps_to_seconds
                 detector.live_count_time = live_count_time
                 detector.real_count_time = real_count_time
+            detector.nb_digitizer_bins = energy_bins
 
         measurement_object.detectors = detectors
 
@@ -288,6 +304,7 @@ class Measurement:
 
                 detector_group.attrs["live_count_time"] = detector.live_count_time
                 detector_group.attrs["real_count_time"] = detector.real_count_time
+                detector_group.attrs["nb_digitizer_bins"] = detector.nb_digitizer_bins
 
     @classmethod
     def from_h5(
@@ -346,6 +363,8 @@ class Measurement:
                         detector.real_count_time = detector_group.attrs[
                             "real_count_time"
                         ]
+                        
+                        detector.nb_digitizer_bins = detector_group.attrs.get("nb_digitizer_bins", 4096)
 
                         if "spectrum" in detector_group:
                             detector._spectrum = detector_group["spectrum"][:]
@@ -1185,3 +1204,34 @@ def get_live_time_from_root(root_filename: str, channel: int) -> Tuple[float, fl
         live_count_time = root_file[f"LiveTime_{channel}"].members["fMilliSec"] / 1000
         real_count_time = root_file[f"RealTime_{channel}"].members["fMilliSec"] / 1000
     return live_count_time, real_count_time
+
+
+def get_spectrum_nbins(settings_file: str) -> int:
+    """
+    Read a settings.xml file and extract the number of spectrum bins
+    from the SRV_PARAM_CH_SPECTRUM_NBINS parameter.
+    
+    Args:
+        settings_file: Path to the settings.xml file
+        
+    Returns:
+        The number of bins as an integer (e.g., 16384 from "BINS_16384")
+    """
+    tree = ET.parse(settings_file)
+    root = tree.getroot()
+    
+    # Find entry with the matching key
+    for entry in root.iter('entry'):
+        key_elem = entry.find('key')
+        if key_elem is not None and key_elem.text == 'SRV_PARAM_CH_SPECTRUM_NBINS':
+            # Get the first value element (contains the actual value)
+            value_container = entry.find('value')
+            if value_container is not None:
+                value_elem = value_container.find('value')
+                if value_elem is not None and value_elem.text:
+                    # Extract number from "BINS_16384" format
+                    match = re.search(r'BINS_(\d+)', value_elem.text)
+                    if match:
+                        return int(match.group(1))
+    print(f"SRV_PARAM_CH_SPECTRUM_NBINS not found in settings file {settings_file}. Defaulting to None bins.")
+    return None

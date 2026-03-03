@@ -569,79 +569,82 @@ class CheckSourceMeasurement(Measurement):
             the peak indices in ``hist``
         """
 
+        # get total number of channels for scaling
+        total_channels = self.detectors[0].nb_digitizer_bins
+        channel_multiplier = int(total_channels / 4096)  # Assuming 4096 channels is the base case
         if self.detector_type.lower() == 'nai':
             # peak finding parameters
-            start_index = 100
+            start_index = int(100 * channel_multiplier)
             prominence = 0.10 * np.max(hist[start_index:])
             height = 0.10 * np.max(hist[start_index:])
-            width = [10, 150]
-            distance = 30
+            width = [int(10 * channel_multiplier), int(150 * channel_multiplier)]
+            distance = int(30 * channel_multiplier)
             if self.check_source.nuclide == na22:
-                start_index = 100
+                start_index = int(100 * channel_multiplier)
                 height = 0.1 * np.max(hist[start_index:])
                 prominence = 0.1 * np.max(hist[start_index:])
-                width = [10, 150]
-                distance = 30
+                width = [int(10 * channel_multiplier), int(150 * channel_multiplier)]
+                distance = int(30 * channel_multiplier)
             elif self.check_source.nuclide == co60:
-                start_index = 400
+                start_index = int(400 * channel_multiplier)
                 height = 0.60 * np.max(hist[start_index:])
                 prominence = None
             elif self.check_source.nuclide == ba133:
-                start_index = 150
+                start_index = int(150 * channel_multiplier)
                 height = 0.10 * np.max(hist[start_index:])
                 prominence = 0.10 * np.max(hist[start_index:])
             elif self.check_source.nuclide == mn54:
                 height = 0.6 * np.max(hist[start_index:])
         elif self.detector_type.lower() == 'hpge':
             # peak finding parameters for HPGe detectors
-            start_index = 10
+            start_index = int(10 * channel_multiplier)
             prominence = 0.50 * np.max(hist[start_index:])
             height = 0.50 * np.max(hist[start_index:])
-            width = [2, 50]
-            distance = 100
+            width = [int(2 * channel_multiplier), int(50 * channel_multiplier)]
+            distance = int(100 * channel_multiplier)
             if self.check_source.nuclide == na22:
-                start_index = 100
+                start_index = int(100 * channel_multiplier)
                 height = 0.4 * np.max(hist[start_index:])
                 prominence = 0.4 * np.max(hist[start_index:])
-                distance = 100
+                distance = int(100 * channel_multiplier)
             elif self.check_source.nuclide == co60:
                 height = 0.5 * np.max(hist[start_index:])
                 prominence = 0.5 * np.max(hist[start_index:])
             elif self.check_source.nuclide == ba133:
-                start_index = 150
+                start_index = int(150 * channel_multiplier)
                 height = 0.10 * np.max(hist[start_index:])
                 prominence = 0.10 * np.max(hist[start_index:])
-                distance = 10
+                distance = int(10 * channel_multiplier)
             elif self.check_source.nuclide == mn54:
-                start_index = 400
+                start_index = int(400 * channel_multiplier)
                 height = 0.7 * np.max(hist[start_index:])
                 prominence = 0.7 * np.max(hist[start_index:])
-                distance = 100
+                distance = int(100 * channel_multiplier)
         elif self.detector_type.lower() == 'labr':
             # peak finding parameters for LaBr3 detectors
-            start_index = 1000
+            start_index = int(250 * channel_multiplier)
             prominence = 0.30 * np.max(hist[start_index:])
             height = 0.30 * np.max(hist[start_index:])
-            width = [5, 150]
-            distance = 20
+            width = [int(1 * channel_multiplier), int(40 * channel_multiplier)]
+            distance = int(10 * channel_multiplier)
             if self.check_source.nuclide == na22:
-                start_index = 1500
+                start_index = int(400 * channel_multiplier)
                 height = 0.1 * np.max(hist[start_index:])
                 prominence = 0.1 * np.max(hist[start_index:])
                 width = None
             elif self.check_source.nuclide == ba133:
-                start_index = 1300
+                start_index = int(300 * channel_multiplier)
                 prominence =  np.max(hist[start_index:]) * 0.05,
                 height = np.max(hist[start_index:]) * 0.1,
             elif self.check_source.nuclide == co60:
-                start_index = 2000
+                start_index = int(500 * channel_multiplier)
                 prominence =  np.max(hist[start_index:]) * 0.5,
                 height = np.max(hist[start_index:]) * 0.5,
             elif self.check_source.nuclide == cs137:
-                start_index = 1500
+                start_index = int(400 * channel_multiplier)
                 prominence = np.max(hist[start_index:]) * 0.5
                 height = np.max(hist[start_index:]) * 0.5
-                width = [5, 200]
+                width = [int(1 * channel_multiplier), int(50 * channel_multiplier)]
         else:
             raise ValueError(
                 f"Unknown detector type: {self.detector_type}. Supported types are 'NaI' and 'HPGe'."

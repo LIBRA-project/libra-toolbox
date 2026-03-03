@@ -473,7 +473,7 @@ class CheckSourceMeasurement(Measurement):
         calibration_coeffs: np.ndarray,
         channel_nb: int,
         search_width: float = 800,
-        compute_error: bool = False
+        compute_error: bool = False,
         threshold_overlap: float = 200,
         summing_method: str = 'sum_gaussian',
     ) -> Union[np.ndarray, float]:

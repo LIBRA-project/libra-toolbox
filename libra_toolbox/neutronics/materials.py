@@ -82,7 +82,7 @@ Cllif = openmc.Material(name="ClLiF")
 LiCl_frac = 0.695  # at.fr.
 
 Cllif.add_element("F", 0.5 * (1 - LiCl_frac), "ao")
-Cllif.add_element("Li", 1.0, "ao")
+Cllif.add_element("Li", 0.5 * (1 - LiCl_frac) + 0.5 * LiCl_frac, "ao")
 Cllif.add_element("Cl", 0.5 * LiCl_frac, "ao")
 Cllif.set_density("g/cm3", get_exp_cllif_density(650))  # 69.5 at. % LiCL at 650 C
 

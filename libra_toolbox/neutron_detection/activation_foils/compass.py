@@ -19,6 +19,7 @@ from libra_toolbox.neutron_detection.activation_foils.calibration import (
     co60,
     ba133,
     mn54,
+    cs137
 )
 from libra_toolbox.neutron_detection.activation_foils.explicit import get_chain
 
@@ -618,11 +619,29 @@ class CheckSourceMeasurement(Measurement):
                 distance = 100
         elif self.detector_type.lower() == 'labr':
             # peak finding parameters for LaBr3 detectors
-            start_index = 10
+            start_index = 1000
             prominence = 0.30 * np.max(hist[start_index:])
             height = 0.30 * np.max(hist[start_index:])
             width = [5, 150]
-            distance = 50
+            distance = 20
+            if self.check_source.nuclide == na22:
+                start_index = 1500
+                height = 0.1 * np.max(hist[start_index:])
+                prominence = 0.1 * np.max(hist[start_index:])
+                width = None
+            elif self.check_source.nuclide == ba133:
+                start_index = 1300
+                prominence =  np.max(hist[start_index:]) * 0.05,
+                height = np.max(hist[start_index:]) * 0.1,
+            elif self.check_source.nuclide == co60:
+                start_index = 2000
+                prominence =  np.max(hist[start_index:]) * 0.5,
+                height = np.max(hist[start_index:]) * 0.5,
+            elif self.check_source.nuclide == cs137:
+                start_index = 1500
+                prominence = np.max(hist[start_index:]) * 0.5
+                height = np.max(hist[start_index:]) * 0.5
+                width = [5, 200]
         else:
             raise ValueError(
                 f"Unknown detector type: {self.detector_type}. Supported types are 'NaI' and 'HPGe'."

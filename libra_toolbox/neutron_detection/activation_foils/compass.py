@@ -597,6 +597,13 @@ class CheckSourceMeasurement(Measurement):
                 height = 0.7 * np.max(hist[start_index:])
                 prominence = 0.7 * np.max(hist[start_index:])
                 distance = 100
+        elif self.detector_type.lower() == 'labr':
+            # peak finding parameters for LaBr3 detectors
+            start_index = 10
+            prominence = 0.30 * np.max(hist[start_index:])
+            height = 0.30 * np.max(hist[start_index:])
+            width = [5, 100]
+            distance = 50
         else:
             raise ValueError(
                 f"Unknown detector type: {self.detector_type}. Supported types are 'NaI' and 'HPGe'."

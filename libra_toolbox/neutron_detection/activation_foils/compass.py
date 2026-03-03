@@ -678,7 +678,6 @@ class CheckSourceMeasurement(Measurement):
 
         # run the peak finding algorithm
         # NOTE: the start_index is used to ignore the low energy region
-        print("start_index:", start_index, "prominence:", prominence, "height:", height, "width:", width, "distance:", distance)
         peaks, peak_data = find_peaks(
             hist[start_index:],
             prominence=prominence,

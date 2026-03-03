@@ -621,7 +621,7 @@ class CheckSourceMeasurement(Measurement):
             start_index = 10
             prominence = 0.30 * np.max(hist[start_index:])
             height = 0.30 * np.max(hist[start_index:])
-            width = [5, 100]
+            width = [5, 150]
             distance = 50
         else:
             raise ValueError(
@@ -638,6 +638,7 @@ class CheckSourceMeasurement(Measurement):
 
         # run the peak finding algorithm
         # NOTE: the start_index is used to ignore the low energy region
+        print("start_index:", start_index, "prominence:", prominence, "height:", height, "width:", width, "distance:", distance)
         peaks, peak_data = find_peaks(
             hist[start_index:],
             prominence=prominence,

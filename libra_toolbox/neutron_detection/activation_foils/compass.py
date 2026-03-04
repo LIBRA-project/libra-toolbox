@@ -10,6 +10,7 @@ import glob
 import h5py
 import xml.etree.ElementTree as ET
 import re
+from zoneinfo import ZoneInfo
 
 import warnings
 from libra_toolbox.neutron_detection.activation_foils.calibration import (
@@ -221,12 +222,22 @@ class Measurement:
         detectors = [Detector(channel_nb=nb) for nb in time_values.keys()]
 
         # Get live and real count times
+        # First check if root files are present in the source directory and get live and real count times from there
         all_root_filenames = glob.glob(os.path.join(source_dir, "*.root"))
         if len(all_root_filenames) == 1:
             root_filename = all_root_filenames[0]
         else:
             root_filename = None
-            print("No root file found, assuming all counts are live")
+            
+        # if root file is not present, check for *_info.txt files and get live and real count times from there
+        if root_filename is None:
+            info_txt_filename = source_dir.parent / f"{source_dir.name}_info.txt"
+            if not os.path.isfile(info_txt_filename):
+                # if the *_info.txt file is not present, set to None, 
+                # which will assume that the live count time is the time between the first and last event, 
+                # and the real count time is the time between the start and stop time (if they are available)
+                info_txt_filename = None
+
         
         # Get energy channel bins for each detector from the settings.xml file if it exists, otherwise assume 4096 bins
         # search for settings.xml file in source_dir
@@ -253,16 +264,23 @@ class Measurement:
                 detector.live_count_time = live_count_time
                 detector.real_count_time = real_count_time
             else:
-                real_count_time = (stop_time - start_time).total_seconds()
-                # Assume first and last event correspond to start and stop time of live counts
-                # and convert from picoseconds to seconds
-                ps_to_seconds = 1e-12
-                live_count_time = (
-                    time_values[detector.channel_nb][-1]
-                    - time_values[detector.channel_nb][0]
-                ) * ps_to_seconds
-                detector.live_count_time = live_count_time
-                detector.real_count_time = real_count_time
+                if info_txt_filename:
+                    live_count_time, real_count_time = get_live_time_from_info_txt(
+                        info_txt_filename, detector.channel_nb
+                    )
+                    detector.live_count_time = live_count_time
+                    detector.real_count_time = real_count_time
+                else:
+                    real_count_time = (stop_time - start_time).total_seconds()
+                    # Assume first and last event correspond to start and stop time of live counts
+                    # and convert from picoseconds to seconds
+                    ps_to_seconds = 1e-12
+                    live_count_time = (
+                        time_values[detector.channel_nb][-1]
+                        - time_values[detector.channel_nb][0]
+                    ) * ps_to_seconds
+                    detector.live_count_time = live_count_time
+                    detector.real_count_time = real_count_time
             detector.nb_digitizer_bins = energy_bins
 
         measurement_object.detectors = detectors
@@ -476,6 +494,7 @@ class CheckSourceMeasurement(Measurement):
         compute_error: bool = False,
         threshold_overlap: float = 200,
         summing_method: str = 'sum_gaussian',
+        ax=None
     ) -> Union[np.ndarray, float]:
         """
         Computes the detection efficiency of a check source given the
@@ -526,6 +545,7 @@ class CheckSourceMeasurement(Measurement):
             search_width=search_width,
             threshold_overlap=threshold_overlap,
             summing_method=summing_method,
+            ax=ax
         )
 
         nb_counts_measured = np.array(nb_counts_measured)
@@ -960,7 +980,8 @@ def gauss(x, b, m, *args):
 
 def fit_peak_gauss(hist, xvals, peak_ergs, 
                    search_width=600, 
-                   threshold_overlap=200):
+                   threshold_overlap=200,
+                   ax=None):
 
     if len(peak_ergs) > 1:
         if np.max(peak_ergs) - np.min(peak_ergs) > threshold_overlap:
@@ -990,6 +1011,11 @@ def fit_peak_gauss(hist, xvals, peak_ergs,
             search_width / (3 * len(peak_ergs)),
         ]
 
+    if ax:
+        print("Plotting initial guess...")
+        ax.plot(xvals[search_start:search_end], gauss(xvals[search_start:search_end], *guess_parameters), 
+                '--',
+                label='Initial Guess')
 
     parameters, covariance = curve_fit(
         gauss,
@@ -998,7 +1024,13 @@ def fit_peak_gauss(hist, xvals, peak_ergs,
         p0=guess_parameters,
     )
 
-    print("Fitted parameters:", parameters)
+    if ax:
+        print("Plotting fitted curve...")
+        ax.plot(xvals[search_start:search_end], gauss(xvals[search_start:search_end], *parameters), 
+                label='Fitted Curve')
+        ax.legend()
+
+
 
     return parameters, covariance
 
@@ -1025,7 +1057,8 @@ def get_multipeak_area(
                     [peak],
                     search_width=search_width,
                     threshold_overlap=threshold_overlap,
-                    summing_method=summing_method
+                    summing_method=summing_method,
+                    ax=ax
                 )
                 areas += area
             return areas
@@ -1036,8 +1069,10 @@ def get_multipeak_area(
 
 
     parameters, covariance = fit_peak_gauss(
-        hist, xvals, peak_ergs, search_width=search_width
+        hist, xvals, peak_ergs, search_width=search_width,
+        ax=ax,
     )
+
 
     areas = []
     peak_starts = []
@@ -1077,6 +1112,7 @@ def get_multipeak_area(
         area = gross_area - trap_cutoff_area
 
         areas += [area]
+
 
     return areas
 
@@ -1211,17 +1247,29 @@ def get_events(directory: str) -> Tuple[Dict[int, np.ndarray], Dict[int, np.ndar
 
 
 def get_start_stop_time(directory: str) -> Tuple[datetime.datetime, datetime.datetime]:
-    """Obtains count start and stop time from the run.info file."""
+    """Obtains count start and stop time from the run.info or *_info.txt file.
+    Some versions of CoMPASS output a run.info file, while others output a *_info.txt file.
+    This function checks for both and reads the time information from the file that exists."""
 
-    info_file = Path(directory).parent / "run.info"
-    if info_file.exists():
-        time_format = "%Y/%m/%d %H:%M:%S.%f%z"
-        with open(info_file, "r") as file:
-            lines = file.readlines()
+    run_info_file = Path(directory).parent / "run.info"
+    info_txt_file = Path(directory).parent / f"{Path(directory).stem}_info.txt"
+
+    if run_info_file.exists():
+        start_time, stop_time = get_start_stop_time_from_run_info(run_info_file)
+    elif info_txt_file.exists():
+        start_time, stop_time = get_start_stop_time_from_info_txt(info_txt_file)
     else:
         raise FileNotFoundError(
             f"Could not find run.info file in parent directory {Path(directory).parent}"
         )
+    return start_time, stop_time
+
+
+def get_start_stop_time_from_run_info(info_file: Path) -> Tuple[datetime.datetime, datetime.datetime]:
+    """Obtains count start and stop time from the run.info file."""
+    time_format = "%Y/%m/%d %H:%M:%S.%f%z"
+    with open(info_file, "r") as file:
+        lines = file.readlines()
 
     start_time, stop_time = None, None
     for line in lines:
@@ -1240,6 +1288,39 @@ def get_start_stop_time(directory: str) -> Tuple[datetime.datetime, datetime.dat
         return start_time, stop_time
 
 
+def get_start_stop_time_from_info_txt(info_txt_file: Path, tz=ZoneInfo("America/New_York")) -> Tuple[datetime.datetime, datetime.datetime]:
+    """Obtains count start and stop time from the *_info.txt file.
+    
+    Args:
+        info_txt_file: Path to the info.txt file
+        tz: Timezone info for the datetime objects
+        
+    Returns:
+        Tuple of (start_time, stop_time) as timezone-aware datetime objects (America/New_York)
+    """
+    
+    time_format = "%a %b %d %H:%M:%S %Y"
+    
+    with open(info_txt_file, "r") as file:
+        lines = file.readlines()
+
+    start_time, stop_time = None, None
+    for line in lines:
+        if line.startswith("Start time = "):
+            time_string = line.split(" = ", 1)[1].strip()
+            start_time = datetime.datetime.strptime(time_string, time_format)
+            start_time = start_time.replace(tzinfo=tz)
+        elif line.startswith("Stop time = "):
+            time_string = line.split(" = ", 1)[1].strip()
+            stop_time = datetime.datetime.strptime(time_string, time_format)
+            stop_time = stop_time.replace(tzinfo=tz)
+
+    if None in (start_time, stop_time):
+        raise ValueError(f"Could not find 'Start time' or 'Stop time' in file {info_txt_file}.")
+    
+    return start_time, stop_time
+
+
 def get_live_time_from_root(root_filename: str, channel: int) -> Tuple[float, float]:
     """
     Gets live and real count time from Compass root file.
@@ -1251,6 +1332,74 @@ def get_live_time_from_root(root_filename: str, channel: int) -> Tuple[float, fl
         live_count_time = root_file[f"LiveTime_{channel}"].members["fMilliSec"] / 1000
         real_count_time = root_file[f"RealTime_{channel}"].members["fMilliSec"] / 1000
     return live_count_time, real_count_time
+
+
+def get_live_time_from_info_txt(info_txt_file: Path, channel: int) -> Tuple[float, float]:
+    """
+    Gets live and real count time in seconds from Compass *_info.txt file.
+    Live time is defined as the difference between the actual time that
+    a count is occurring and the "dead time," in which the output of detector
+    pulses is saturated such that additional signals cannot be processed.
+    
+    Args:
+        info_txt_file: Path to the info.txt file
+        channel: Channel number (e.g., 0 for CH0@, 1 for CH1@)
+        
+    Returns:
+        Tuple of (live_count_time, real_count_time) in seconds
+    """
+    with open(info_txt_file, "r") as file:
+        lines = file.readlines()
+
+    channel_header = f"CH{channel}@"
+    in_channel_section = False
+    live_count_time = None
+    real_count_time = None
+
+    for line in lines:
+        if line.startswith(channel_header):
+            in_channel_section = True
+            continue
+        elif in_channel_section and line.startswith("CH") and "@" in line:
+            # We've reached the next channel section, stop searching
+            break
+        elif in_channel_section:
+            if "Real time = " in line:
+                # Extract time string like "0:03:14.665"
+                match = re.search(r"Real time = (\d+:\d{2}:\d{2}\.\d+)", line)
+                if match:
+                    real_count_time = _parse_time_to_seconds(match.group(1))
+            if "Live time = " in line:
+                match = re.search(r"Live time = (\d+:\d{2}:\d{2}\.\d+)", line)
+                if match:
+                    live_count_time = _parse_time_to_seconds(match.group(1))
+        
+        if live_count_time is not None and real_count_time is not None:
+            break
+
+    if live_count_time is None or real_count_time is None:
+        raise ValueError(
+            f"Could not find Real time or Live time for channel {channel} in file {info_txt_file}."
+        )
+
+    return live_count_time, real_count_time
+
+
+def _parse_time_to_seconds(time_str: str) -> float:
+    """
+    Parse a time string in format "H:MM:SS.mmm" to seconds.
+    
+    Args:
+        time_str: Time string like "0:03:14.665"
+        
+    Returns:
+        Time in seconds as a float
+    """
+    parts = time_str.split(":")
+    hours = int(parts[0])
+    minutes = int(parts[1])
+    seconds = float(parts[2])
+    return hours * 3600 + minutes * 60 + seconds
 
 
 def get_spectrum_nbins(settings_file: str) -> int:

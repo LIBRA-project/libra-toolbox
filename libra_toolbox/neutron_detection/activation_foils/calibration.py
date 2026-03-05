@@ -103,6 +103,7 @@ class Reaction:
     reactant: Nuclide
     product: Nuclide
     cross_section: float
+    type: str = "(n,2n)"
     """
     Class to hold the information of a reaction.
     Attributes
@@ -113,6 +114,7 @@ class Reaction:
         The product of the reaction.
     cross_section :
         The cross section of the reaction in cm2.
+    type: The type of the reaction (default is "(n,2n)").
     """
 
 nb93_n2n = Reaction(

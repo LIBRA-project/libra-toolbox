@@ -272,6 +272,7 @@ class Measurement:
                     detector.real_count_time = real_count_time
                 else:
                     real_count_time = (stop_time - start_time).total_seconds()
+                    print("Assuming real count time is the time between start and stop time: ", real_count_time)
                     # Assume first and last event correspond to start and stop time of live counts
                     # and convert from picoseconds to seconds
                     ps_to_seconds = 1e-12
@@ -279,6 +280,7 @@ class Measurement:
                         time_values[detector.channel_nb][-1]
                         - time_values[detector.channel_nb][0]
                     ) * ps_to_seconds
+                    print("Assuming live count time is the time between first and last event: ", live_count_time)
                     detector.live_count_time = live_count_time
                     detector.real_count_time = real_count_time
             detector.nb_digitizer_bins = energy_bins
@@ -549,6 +551,7 @@ class CheckSourceMeasurement(Measurement):
         )
 
         nb_counts_measured = np.array(nb_counts_measured)
+        print("Measured counts under peaks for ", self.check_source.nuclide.name, ": ", nb_counts_measured)
 
         # assert that all numbers in nb_counts_measured are > 0
         assert np.all(
@@ -847,11 +850,19 @@ class SampleMeasurement(Measurement):
 
         number_of_decays_measured = photon_counts / f_spec
 
+        print(f"number_of_decays_measured: {number_of_decays_measured}")
+        print("nnumber of atoms in foil: ", self.foil.nb_atoms)
+        print("cross section: ", self.foil.reaction.cross_section)
         flux = (
             number_of_decays_measured
             / self.foil.nb_atoms
             / self.foil.reaction.cross_section
         )
+        # If the cross section is zero or negative, set the flux to zero to avoid division by zero or negative flux values
+        if np.any(self.foil.reaction.cross_section <= 0):
+            zero_indices = np.where(self.foil.reaction.cross_section <= 0)[0]
+            flux[zero_indices] = 0
+        print(f"flux before time and self-attenuation correction: {flux}")
 
         flux /= f_time * f_self
 
@@ -1314,13 +1325,24 @@ def plot_histogram_with_peak_fit(
     return fig, ax, all_fit_parameters
 
 
-def get_channel(filename):
+def get_channel(filename, directory):
     """
     Extract the channel number from a given filename string.
 
     Parameters
     ----------
     filename : str
+        The input filename string containing the channel information.
+    directory : str
+        The directory containing the filename.
+
+    Returns
+    -------
+    int
+        The extracted channel number.
+
+    Example
+    -------
         The input filename string containing the channel information.
         Should look something like : "Data_CH<channel_number>@V...CSV"
 
@@ -1331,13 +1353,21 @@ def get_channel(filename):
 
     Example
     -------
-    >>> get_channel("Data_CH4@V1725_292_Background_250322.CSV")
+    >>> get_channel("Data_CH4@V1725_292_Background_250322.CSV", "UNFILTERED/")
     4
+    >>> get_channel("DataR_CH5@V1725_292_Background_250322.CSV", "RAW/")
+    5
     """
-    return int(filename.split("@")[0][7:])
+    # first determine if directory is for RAW or UNFILTERED data
+    # as they will have different nameing conventions
+    stem = Path(directory).stem
+    if "RAW" in stem:
+        return int(filename.split("@")[0][8:])
+    else:
+        return int(filename.split("@")[0][7:])
 
 
-def sort_compass_files(directory: str) -> dict:
+def sort_compass_files(directory: str, filetype=".csv") -> dict:
     """Gets Compass csv data filenames
     and sorts them according to channel and ending number.
     The filenames need to be sorted by ending number because only
@@ -1351,8 +1381,9 @@ def sort_compass_files(directory: str) -> dict:
     filenames = os.listdir(directory)
     data_filenames = {}
     for filename in filenames:
-        if filename.lower().endswith(".csv"):
-            ch = get_channel(filename)
+        if filename.lower().endswith(filetype):
+            print(f"Found data file: {filename}")
+            ch = get_channel(filename, directory)
             # initialize filenames for each channel
             if ch not in data_filenames.keys():
                 data_filenames[ch] = []

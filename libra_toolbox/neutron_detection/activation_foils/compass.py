@@ -8,6 +8,9 @@ import datetime
 import uproot
 import glob
 import h5py
+import xml.etree.ElementTree as ET
+import re
+from zoneinfo import ZoneInfo
 
 import warnings
 from libra_toolbox.neutron_detection.activation_foils.calibration import (
@@ -17,6 +20,7 @@ from libra_toolbox.neutron_detection.activation_foils.calibration import (
     co60,
     ba133,
     mn54,
+    cs137
 )
 from libra_toolbox.neutron_detection.activation_foils.explicit import get_chain
 
@@ -218,12 +222,35 @@ class Measurement:
         detectors = [Detector(channel_nb=nb) for nb in time_values.keys()]
 
         # Get live and real count times
+        # First check if root files are present in the source directory and get live and real count times from there
         all_root_filenames = glob.glob(os.path.join(source_dir, "*.root"))
         if len(all_root_filenames) == 1:
             root_filename = all_root_filenames[0]
         else:
             root_filename = None
-            print("No root file found, assuming all counts are live")
+            
+        # if root file is not present, check for *_info.txt files and get live and real count times from there
+        if root_filename is None:
+            info_txt_filename = Path(source_dir).parent / f"{Path(source_dir).parent.stem}_info.txt"
+            if not os.path.isfile(info_txt_filename):
+                # if the *_info.txt file is not present, set to None, 
+                # which will assume that the live count time is the time between the first and last event, 
+                # and the real count time is the time between the start and stop time (if they are available)
+                info_txt_filename = None
+
+        
+        # Get energy channel bins for each detector from the settings.xml file if it exists, otherwise assume 4096 bins
+        # search for settings.xml file in source_dir
+        settings_file = Path(source_dir).parent / "settings.xml"
+        if os.path.isfile(settings_file):
+            energy_bins = get_spectrum_nbins(settings_file)
+            print(f"Found settings.xml file. Using energy bins from file: {energy_bins}")
+        else:
+            print("No settings.xml file found. Assuming 4096 energy bins.")
+            print(os.listdir(Path(source_dir).parent))
+            energy_bins = None
+        if not energy_bins:
+            energy_bins = 4096
 
         for detector in detectors:
             detector.events = np.column_stack(
@@ -237,16 +264,26 @@ class Measurement:
                 detector.live_count_time = live_count_time
                 detector.real_count_time = real_count_time
             else:
-                real_count_time = (stop_time - start_time).total_seconds()
-                # Assume first and last event correspond to start and stop time of live counts
-                # and convert from picoseconds to seconds
-                ps_to_seconds = 1e-12
-                live_count_time = (
-                    time_values[detector.channel_nb][-1]
-                    - time_values[detector.channel_nb][0]
-                ) * ps_to_seconds
-                detector.live_count_time = live_count_time
-                detector.real_count_time = real_count_time
+                if info_txt_filename:
+                    live_count_time, real_count_time = get_live_time_from_info_txt(
+                        info_txt_filename, detector.channel_nb
+                    )
+                    detector.live_count_time = live_count_time
+                    detector.real_count_time = real_count_time
+                else:
+                    real_count_time = (stop_time - start_time).total_seconds()
+                    print("Assuming real count time is the time between start and stop time: ", real_count_time)
+                    # Assume first and last event correspond to start and stop time of live counts
+                    # and convert from picoseconds to seconds
+                    ps_to_seconds = 1e-12
+                    live_count_time = (
+                        time_values[detector.channel_nb][-1]
+                        - time_values[detector.channel_nb][0]
+                    ) * ps_to_seconds
+                    print("Assuming live count time is the time between first and last event: ", live_count_time)
+                    detector.live_count_time = live_count_time
+                    detector.real_count_time = real_count_time
+            detector.nb_digitizer_bins = energy_bins
 
         measurement_object.detectors = detectors
 
@@ -288,6 +325,7 @@ class Measurement:
 
                 detector_group.attrs["live_count_time"] = detector.live_count_time
                 detector_group.attrs["real_count_time"] = detector.real_count_time
+                detector_group.attrs["nb_digitizer_bins"] = detector.nb_digitizer_bins
 
     @classmethod
     def from_h5(
@@ -346,6 +384,8 @@ class Measurement:
                         detector.real_count_time = detector_group.attrs[
                             "real_count_time"
                         ]
+                        
+                        detector.nb_digitizer_bins = detector_group.attrs.get("nb_digitizer_bins", 4096)
 
                         if "spectrum" in detector_group:
                             detector._spectrum = detector_group["spectrum"][:]
@@ -453,8 +493,10 @@ class CheckSourceMeasurement(Measurement):
         calibration_coeffs: np.ndarray,
         channel_nb: int,
         search_width: float = 800,
+        compute_error: bool = False,
         threshold_overlap: float = 200,
         summing_method: str = 'sum_gaussian',
+        ax=None
     ) -> Union[np.ndarray, float]:
         """
         Computes the detection efficiency of a check source given the
@@ -505,10 +547,11 @@ class CheckSourceMeasurement(Measurement):
             search_width=search_width,
             threshold_overlap=threshold_overlap,
             summing_method=summing_method,
+            ax=ax
         )
 
         nb_counts_measured = np.array(nb_counts_measured)
-        nb_counts_measured_err = np.sqrt(nb_counts_measured)
+        print("Measured counts under peaks for ", self.check_source.nuclide.name, ": ", nb_counts_measured)
 
         # assert that all numbers in nb_counts_measured are > 0
         assert np.all(
@@ -535,7 +578,25 @@ class CheckSourceMeasurement(Measurement):
 
         detection_efficiency = nb_counts_measured / expected_nb_counts
 
-        return detection_efficiency
+        if compute_error:
+            nb_counts_measured_err = np.sqrt(nb_counts_measured)
+
+            act_expec_err = self.check_source.get_expected_activity_error(self.start_time)
+            gamma_rays_expected_err = act_expec_err * (
+                np.array(self.check_source.nuclide.intensity)
+            )
+            expected_nb_counts_err = gamma_rays_expected_err / decay_constant
+            expected_nb_counts_err *= (
+                live_count_time_correction_factor * decay_counting_correction_factor
+            )
+            
+            detection_efficiency_err = detection_efficiency * np.sqrt(
+                (nb_counts_measured_err / nb_counts_measured) ** 2 +
+                (expected_nb_counts_err / expected_nb_counts) ** 2
+            )
+            return detection_efficiency, detection_efficiency_err
+        else:
+            return detection_efficiency
 
     def get_peaks(self, hist: np.ndarray, **kwargs) -> np.ndarray:
         """Returns the peak indices of the histogram
@@ -543,60 +604,97 @@ class CheckSourceMeasurement(Measurement):
         Args:
             hist: a histogram
             kwargs: optional parameters for the peak finding algorithm
-                see scipy.signal.find_peaks for more information
+                see scipy.signal.find_peaks for more information like:
+                    start_index: the index to start the peak finding from, to ignore the low energy region
+
+                    relative_prominence: fraction of maximum count in the histogram to set the prominence parameter for peak finding
+
+                    relative_height: fraction of maximum count in the histogram to set the height parameter for peak finding
+
+                    width: the width parameter for peak finding
+                    
+                    distance: the distance parameter for peak finding
 
         Returns:
             the peak indices in ``hist``
         """
 
+        # get total number of channels for scaling
+        total_channels = self.detectors[0].nb_digitizer_bins
+        channel_multiplier = int(total_channels / 4096)  # Assuming 4096 channels is the base case
         if self.detector_type.lower() == 'nai':
             # peak finding parameters
-            start_index = 100
-            prominence = 0.10 * np.max(hist[start_index:])
-            height = 0.10 * np.max(hist[start_index:])
-            width = [10, 150]
-            distance = 30
+            start_index = int(100 * channel_multiplier)
+            relative_prominence = 0.10
+            relative_height = 0.10
+            width = [int(10 * channel_multiplier), int(150 * channel_multiplier)]
+            distance = int(30 * channel_multiplier)
             if self.check_source.nuclide == na22:
-                start_index = 100
-                height = 0.1 * np.max(hist[start_index:])
-                prominence = 0.1 * np.max(hist[start_index:])
-                width = [10, 150]
-                distance = 30
+                start_index = int(100 * channel_multiplier)
+                relative_height = 0.1
+                relative_prominence = 0.1
+                width = [int(10 * channel_multiplier), int(150 * channel_multiplier)]
+                distance = int(30 * channel_multiplier)
             elif self.check_source.nuclide == co60:
-                start_index = 400
-                height = 0.60 * np.max(hist[start_index:])
-                prominence = None
+                start_index = int(400 * channel_multiplier)
+                relative_height = 0.60
+                relative_prominence = None
             elif self.check_source.nuclide == ba133:
-                start_index = 150
-                height = 0.10 * np.max(hist[start_index:])
-                prominence = 0.10 * np.max(hist[start_index:])
+                start_index = int(150 * channel_multiplier)
+                relative_height = 0.10
+                relative_prominence = 0.10
             elif self.check_source.nuclide == mn54:
-                height = 0.6 * np.max(hist[start_index:])
+                relative_height = 0.6 
         elif self.detector_type.lower() == 'hpge':
             # peak finding parameters for HPGe detectors
-            start_index = 10
-            prominence = 0.50 * np.max(hist[start_index:])
-            height = 0.50 * np.max(hist[start_index:])
-            width = [2, 50]
-            distance = 100
+            start_index = int(10 * channel_multiplier)
+            relative_prominence = 0.50
+            relative_height = 0.50
+            width = [int(2 * channel_multiplier), int(50 * channel_multiplier)]
+            distance = int(100 * channel_multiplier)
             if self.check_source.nuclide == na22:
-                start_index = 100
-                height = 0.4 * np.max(hist[start_index:])
-                prominence = 0.4 * np.max(hist[start_index:])
-                distance = 100
+                start_index = int(100 * channel_multiplier)
+                relative_height = 0.4
+                relative_prominence = 0.4
+                distance = int(100 * channel_multiplier)
             elif self.check_source.nuclide == co60:
-                height = 0.5 * np.max(hist[start_index:])
-                prominence = 0.5 * np.max(hist[start_index:])
+                relative_height = 0.5
+                relative_prominence = 0.5
             elif self.check_source.nuclide == ba133:
-                start_index = 150
-                height = 0.10 * np.max(hist[start_index:])
-                prominence = 0.10 * np.max(hist[start_index:])
-                distance = 10
+                start_index = int(150 * channel_multiplier)
+                relative_height = 0.10
+                relative_prominence = 0.10
+                distance = int(10 * channel_multiplier)
             elif self.check_source.nuclide == mn54:
-                start_index = 400
-                height = 0.7 * np.max(hist[start_index:])
-                prominence = 0.7 * np.max(hist[start_index:])
-                distance = 100
+                start_index = int(400 * channel_multiplier)
+                relative_height = 0.7
+                relative_prominence = 0.7
+                distance = int(100 * channel_multiplier)
+        elif self.detector_type.lower() == 'labr':
+            # peak finding parameters for LaBr3 detectors
+            start_index = int(250 * channel_multiplier)
+            relative_prominence = 0.30
+            relative_height = 0.30
+            width = [int(1 * channel_multiplier), int(40 * channel_multiplier)]
+            distance = int(10 * channel_multiplier)
+            if self.check_source.nuclide == na22:
+                start_index = int(400 * channel_multiplier)
+                relative_height = 0.1
+                relative_prominence = 0.1
+                width = None
+            elif self.check_source.nuclide == ba133:
+                start_index = int(300 * channel_multiplier)
+                relative_prominence = 0.05
+                relative_height = 0.1
+            elif self.check_source.nuclide == co60:
+                start_index = int(500 * channel_multiplier)
+                relative_prominence = 0.5
+                relative_height = 0.5
+            elif self.check_source.nuclide == cs137:
+                start_index = int(400 * channel_multiplier)
+                relative_prominence = 0.5
+                relative_height = 0.5
+                width = [int(1 * channel_multiplier), int(50 * channel_multiplier)]
         else:
             raise ValueError(
                 f"Unknown detector type: {self.detector_type}. Supported types are 'NaI' and 'HPGe'."
@@ -604,12 +702,15 @@ class CheckSourceMeasurement(Measurement):
 
         # update the parameters if kwargs are provided
         if kwargs:
+            print("kwargs provided, updating peak finding parameters with provided values")
             start_index = kwargs.get("start_index", start_index)
-            prominence = kwargs.get("prominence", prominence)
-            height = kwargs.get("height", height)
+            relative_prominence = kwargs.get("relative_prominence", relative_prominence)
+            relative_height = kwargs.get("relative_height", relative_height)
             width = kwargs.get("width", width)
             distance = kwargs.get("distance", distance)
 
+        prominence = relative_prominence * np.max(hist) if relative_prominence is not None else None
+        height = relative_height * np.max(hist) if relative_height is not None else None
         # run the peak finding algorithm
         # NOTE: the start_index is used to ignore the low energy region
         peaks, peak_data = find_peaks(
@@ -638,6 +739,8 @@ class SampleMeasurement(Measurement):
         calibration_coeffs,
         channel_nb: int,
         search_width: float = 800,
+        detection_efficiency: float = None,
+        detection_efficiency_err: float = 0.0,
         summing_method: str = 'sum_gaussian',
     ):
         # find right background detector
@@ -664,10 +767,15 @@ class SampleMeasurement(Measurement):
         nb_counts_measured = np.array(nb_counts_measured)
         nb_counts_measured_err = np.sqrt(nb_counts_measured)
 
-        detection_efficiency = np.polyval(efficiency_coeffs, energy)
+        if detection_efficiency is None:
+            detection_efficiency = np.polyval(efficiency_coeffs, energy)
 
         gamma_emmitted = nb_counts_measured / detection_efficiency
-        gamma_emmitted_err = nb_counts_measured_err / detection_efficiency
+        gamma_emmitted_err = gamma_emmitted * np.sqrt(
+            (nb_counts_measured_err / nb_counts_measured) ** 2
+            + (detection_efficiency_err / detection_efficiency) ** 2
+        )
+        
         return gamma_emmitted, gamma_emmitted_err
 
     def get_neutron_flux(
@@ -742,11 +850,19 @@ class SampleMeasurement(Measurement):
 
         number_of_decays_measured = photon_counts / f_spec
 
+        print(f"number_of_decays_measured: {number_of_decays_measured}")
+        print("nnumber of atoms in foil: ", self.foil.nb_atoms)
+        print("cross section: ", self.foil.reaction.cross_section)
         flux = (
             number_of_decays_measured
             / self.foil.nb_atoms
             / self.foil.reaction.cross_section
         )
+        # If the cross section is zero or negative, set the flux to zero to avoid division by zero or negative flux values
+        if np.any(self.foil.reaction.cross_section <= 0):
+            zero_indices = np.where(self.foil.reaction.cross_section <= 0)[0]
+            flux[zero_indices] = 0
+        print(f"flux before time and self-attenuation correction: {flux}")
 
         flux /= f_time * f_self
 
@@ -817,9 +933,16 @@ def get_calibration_data(
         get_peaks() for each check source measurement, with the check source nuclide 
         name as key.
         Example: peak_kwargs = {
-            'Na-22': {'start_index': 100, 'height': 0.1 * np.max(hist)},
-            'Co-60': {'start_index': 400, 'height': 0.6 * np.max(hist)},
+            'Na-22': {'start_index': 100, 'height': 0.1},
+            'Co-60': {'start_index': 400, 'height': 0.6},
         }
+        "The height and prominence parameters in the get_peaks() function are defined 
+        as a factor of the maximum count in the histogram, starting from the start_index.
+        So for example, if the histogram has a maximum count of 1000 starting from the start_index, 
+        and the height parameter is set to 0.1, then the height threshold for peak finding will be 100 counts.
+        This allows the peak finding parameters to be scaled according to the actual counts 
+        in the histogram for each check source measurement, which can be useful if the check sources 
+        have different activities and therefore different count rates.
     """
     background_detector = [
         detector
@@ -840,8 +963,8 @@ def get_calibration_data(
             )
             kwargs = {}
             if peak_kwargs is not None:
-                if measurement.check_source.nuclide in peak_kwargs.keys():
-                    kwargs = peak_kwargs[measurement.check_source.nuclide]
+                if measurement.check_source.nuclide.name in peak_kwargs.keys():
+                    kwargs = peak_kwargs[measurement.check_source.nuclide.name]
                     found_a_nuclide = True
 
             peaks_ind = measurement.get_peaks(hist, **kwargs)
@@ -887,7 +1010,8 @@ def gauss(x, b, m, *args):
 
 def fit_peak_gauss(hist, xvals, peak_ergs, 
                    search_width=600, 
-                   threshold_overlap=200):
+                   threshold_overlap=200,
+                   ax=None):
 
     if len(peak_ergs) > 1:
         if np.max(peak_ergs) - np.min(peak_ergs) > threshold_overlap:
@@ -917,6 +1041,11 @@ def fit_peak_gauss(hist, xvals, peak_ergs,
             search_width / (3 * len(peak_ergs)),
         ]
 
+    if ax:
+        print("Plotting initial guess...")
+        ax.plot(xvals[search_start:search_end], gauss(xvals[search_start:search_end], *guess_parameters), 
+                '--',
+                label='Initial Guess')
 
     parameters, covariance = curve_fit(
         gauss,
@@ -925,7 +1054,13 @@ def fit_peak_gauss(hist, xvals, peak_ergs,
         p0=guess_parameters,
     )
 
-    print("Fitted parameters:", parameters)
+    if ax:
+        print("Plotting fitted curve...")
+        ax.plot(xvals[search_start:search_end], gauss(xvals[search_start:search_end], *parameters), 
+                label='Fitted Curve')
+        ax.legend()
+
+
 
     return parameters, covariance
 
@@ -952,7 +1087,8 @@ def get_multipeak_area(
                     [peak],
                     search_width=search_width,
                     threshold_overlap=threshold_overlap,
-                    summing_method=summing_method
+                    summing_method=summing_method,
+                    ax=ax
                 )
                 areas += area
             return areas
@@ -963,8 +1099,10 @@ def get_multipeak_area(
 
 
     parameters, covariance = fit_peak_gauss(
-        hist, xvals, peak_ergs, search_width=search_width
+        hist, xvals, peak_ergs, search_width=search_width,
+        ax=ax,
     )
+
 
     areas = []
     peak_starts = []
@@ -1005,16 +1143,206 @@ def get_multipeak_area(
 
         areas += [area]
 
+
     return areas
 
 
-def get_channel(filename):
+def plot_histogram_with_peak_fit(
+    detector: Detector,
+    calibration_coeffs: np.ndarray,
+    peak_energies: List[float],
+    background_detector: Detector = None,
+    search_width: float = 600,
+    threshold_overlap: float = 200,
+    ax=None,
+    plot_initial_guess: bool = False,
+    plot_peak_area: bool = True,
+    hist_kwargs: dict = None,
+    fit_kwargs: dict = None,
+    fill_kwargs: dict = None,
+    plot_title: str = None,
+):
+    """
+    Plot the energy histogram of a detector with Gaussian peak fits.
+    
+    Args:
+        detector: Detector object containing the measurement data
+        calibration_coeffs: Polynomial coefficients for energy calibration
+        peak_energies: List of peak energies (in keV) to fit
+        background_detector: Optional background Detector for subtraction
+        search_width: Width around peaks to search for fitting
+        threshold_overlap: Threshold for considering peaks as overlapping
+        ax: Matplotlib axes object. If None, a new figure is created.
+        plot_initial_guess: If True, also plot the initial guess for the fit
+        plot_peak_area: If True, fill the area under the peak down to the baseline
+        hist_kwargs: Additional kwargs for histogram plotting (e.g., color, alpha)
+        fit_kwargs: Additional kwargs for fit curve plotting (e.g., color, linewidth)
+        fill_kwargs: Additional kwargs for area fill (e.g., color, alpha)
+        
+    Returns:
+        Tuple of (fig, ax, fit_parameters) where fit_parameters is a list of
+        fitted parameters for each peak group
+    """
+    import matplotlib.pyplot as plt
+    
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(10, 6))
+    else:
+        fig = ax.get_figure()
+    
+    # Get histogram data
+    if background_detector is not None:
+        hist, bin_edges = detector.get_energy_hist_background_substract(
+            background_detector, bins=None
+        )
+    else:
+        hist, bin_edges = detector.get_energy_hist(bins=None)
+    
+    # Calibrate bin edges
+    calibrated_bin_edges = np.polyval(calibration_coeffs, bin_edges)
+    xvals = np.diff(calibrated_bin_edges) / 2 + calibrated_bin_edges[:-1]
+    
+    # Plot histogram
+    default_hist_kwargs = {'alpha': 0.7, 'label': 'Histogram'}
+    if hist_kwargs:
+        default_hist_kwargs.update(hist_kwargs)
+    ax.stairs(hist, calibrated_bin_edges, **default_hist_kwargs)
+    
+    # Fit and plot peaks
+    peak_energies = np.atleast_1d(peak_energies)
+    all_fit_parameters = []
+    
+    # Group peaks by overlap threshold
+    if len(peak_energies) > 1 and np.max(peak_energies) - np.min(peak_energies) > threshold_overlap:
+        # Process peaks individually
+        peak_groups = [[p] for p in peak_energies]
+    else:
+        # Process all peaks together
+        peak_groups = [list(peak_energies)]
+    
+    default_fit_kwargs = {'linewidth': 2}
+    if fit_kwargs:
+        default_fit_kwargs.update(fit_kwargs)
+    
+    default_fill_kwargs = {'alpha': 0.3, 'label': 'Peak Area'}
+    if fill_kwargs:
+        default_fill_kwargs.update(fill_kwargs)
+    
+    fill_label_added = False
+    
+    for i, peak_group in enumerate(peak_groups):
+        search_start = np.argmin(
+            np.abs((peak_group[0] - search_width / len(peak_group)) - xvals)
+        )
+        search_end = np.argmin(
+            np.abs((peak_group[-1] + search_width / len(peak_group)) - xvals)
+        )
+        
+        # Build initial guess
+        guess_parameters = [0, 0]
+        for peak_erg in peak_group:
+            peak_ind = np.argmin(np.abs(peak_erg - xvals))
+            guess_parameters += [
+                hist[peak_ind],
+                peak_erg,
+                search_width / (3 * len(peak_group)),
+            ]
+        
+        if plot_initial_guess:
+            ax.plot(
+                xvals[search_start:search_end],
+                gauss(xvals[search_start:search_end], *guess_parameters),
+                '--',
+                label=f'Initial Guess (Peak {i+1})' if len(peak_groups) > 1 else 'Initial Guess',
+                alpha=0.5
+            )
+        
+        # Fit the peak(s)
+        try:
+            parameters, covariance = curve_fit(
+                gauss,
+                xvals[search_start:search_end],
+                hist[search_start:search_end],
+                p0=guess_parameters,
+            )
+            all_fit_parameters.append(parameters)
+            
+            # Plot fitted curve
+            ax.plot(
+                xvals[search_start:search_end],
+                gauss(xvals[search_start:search_end], *parameters),
+                label=f'Fitted Curve (Peak {i+1})' if len(peak_groups) > 1 else 'Fitted Curve',
+                **default_fit_kwargs
+            )
+            
+            # Fill peak area for each peak in the group
+            if plot_peak_area:
+                for j in range(len(peak_group)):
+                    # Extract individual peak parameters
+                    mean = parameters[2 + 3 * j + 1]
+                    sigma = np.abs(parameters[2 + 3 * j + 2])
+                    
+                    # Peak bounds at ±3 sigma
+                    peak_start = np.argmin(np.abs((mean - 3 * sigma) - xvals))
+                    peak_end = np.argmin(np.abs((mean + 3 * sigma) - xvals))
+                    
+                    peak_x = xvals[peak_start:peak_end]
+                    
+                    # Individual peak Gaussian curve
+                    peak_params = [parameters[0], parameters[1], parameters[2 + 3 * j], mean, sigma]
+                    peak_curve = gauss(peak_x, *peak_params)
+                    
+                    # Linear baseline (trap_cutoff)
+                    baseline = parameters[0] + parameters[1] * peak_x
+                    
+                    # Fill between the Gaussian and the baseline
+                    current_fill_kwargs = default_fill_kwargs.copy()
+                    if fill_label_added:
+                        current_fill_kwargs.pop('label', None)
+                    else:
+                        fill_label_added = True
+                    
+                    ax.fill_between(
+                        peak_x,
+                        baseline,
+                        peak_curve,
+                        **current_fill_kwargs
+                    )
+                    
+                    # Plot the baseline
+                    ax.plot(peak_x, baseline, 'k--', linewidth=1, alpha=0.5)
+                    
+        except RuntimeError as e:
+            warnings.warn(f"Could not fit peak group {peak_group}: {e}")
+            all_fit_parameters.append(None)
+    
+    ax.set_xlabel('Energy (keV)')
+    ax.set_ylabel('Counts')
+    ax.legend()
+    if plot_title:
+        ax.set_title(plot_title)
+    
+    return fig, ax, all_fit_parameters
+
+
+def get_channel(filename, directory):
     """
     Extract the channel number from a given filename string.
 
     Parameters
     ----------
     filename : str
+        The input filename string containing the channel information.
+    directory : str
+        The directory containing the filename.
+
+    Returns
+    -------
+    int
+        The extracted channel number.
+
+    Example
+    -------
         The input filename string containing the channel information.
         Should look something like : "Data_CH<channel_number>@V...CSV"
 
@@ -1025,13 +1353,21 @@ def get_channel(filename):
 
     Example
     -------
-    >>> get_channel("Data_CH4@V1725_292_Background_250322.CSV")
+    >>> get_channel("Data_CH4@V1725_292_Background_250322.CSV", "UNFILTERED/")
     4
+    >>> get_channel("DataR_CH5@V1725_292_Background_250322.CSV", "RAW/")
+    5
     """
-    return int(filename.split("@")[0][7:])
+    # first determine if directory is for RAW or UNFILTERED data
+    # as they will have different nameing conventions
+    stem = Path(directory).stem
+    if "RAW" in stem:
+        return int(filename.split("@")[0][8:])
+    else:
+        return int(filename.split("@")[0][7:])
 
 
-def sort_compass_files(directory: str) -> dict:
+def sort_compass_files(directory: str, filetype=".csv") -> dict:
     """Gets Compass csv data filenames
     and sorts them according to channel and ending number.
     The filenames need to be sorted by ending number because only
@@ -1045,8 +1381,9 @@ def sort_compass_files(directory: str) -> dict:
     filenames = os.listdir(directory)
     data_filenames = {}
     for filename in filenames:
-        if filename.lower().endswith(".csv"):
-            ch = get_channel(filename)
+        if filename.lower().endswith(filetype):
+            print(f"Found data file: {filename}")
+            ch = get_channel(filename, directory)
             # initialize filenames for each channel
             if ch not in data_filenames.keys():
                 data_filenames[ch] = []
@@ -1138,17 +1475,34 @@ def get_events(directory: str) -> Tuple[Dict[int, np.ndarray], Dict[int, np.ndar
 
 
 def get_start_stop_time(directory: str) -> Tuple[datetime.datetime, datetime.datetime]:
-    """Obtains count start and stop time from the run.info file."""
+    """Obtains count start and stop time from the run.info or *_info.txt file.
+    Some versions of CoMPASS output a run.info file, while others output a *_info.txt file.
+    This function checks for both and reads the time information from the file that exists."""
 
-    info_file = Path(directory).parent / "run.info"
-    if info_file.exists():
-        time_format = "%Y/%m/%d %H:%M:%S.%f%z"
-        with open(info_file, "r") as file:
-            lines = file.readlines()
+    run_info_file = Path(directory).parent / "run.info"
+    info_txt_file = Path(directory).parent / f"{Path(directory).parent.stem}_info.txt"
+
+    print("Hello world from get_start_stop_time!")
+    print(f"Looking for run.info file at {run_info_file}")
+    print(f"Looking for info.txt file at {info_txt_file}")
+
+    if run_info_file.exists():
+        start_time, stop_time = get_start_stop_time_from_run_info(run_info_file)
+    elif info_txt_file.exists():
+        print("Hello world from get_start_stop_time_from_info_txt!")
+        start_time, stop_time = get_start_stop_time_from_info_txt(info_txt_file)
     else:
         raise FileNotFoundError(
             f"Could not find run.info file in parent directory {Path(directory).parent}"
         )
+    return start_time, stop_time
+
+
+def get_start_stop_time_from_run_info(info_file: Path) -> Tuple[datetime.datetime, datetime.datetime]:
+    """Obtains count start and stop time from the run.info file."""
+    time_format = "%Y/%m/%d %H:%M:%S.%f%z"
+    with open(info_file, "r") as file:
+        lines = file.readlines()
 
     start_time, stop_time = None, None
     for line in lines:
@@ -1167,6 +1521,39 @@ def get_start_stop_time(directory: str) -> Tuple[datetime.datetime, datetime.dat
         return start_time, stop_time
 
 
+def get_start_stop_time_from_info_txt(info_txt_file: Path, tz=ZoneInfo("America/New_York")) -> Tuple[datetime.datetime, datetime.datetime]:
+    """Obtains count start and stop time from the *_info.txt file.
+    
+    Args:
+        info_txt_file: Path to the info.txt file
+        tz: Timezone info for the datetime objects
+        
+    Returns:
+        Tuple of (start_time, stop_time) as timezone-aware datetime objects (America/New_York)
+    """
+    
+    time_format = "%a %b %d %H:%M:%S %Y"
+    
+    with open(info_txt_file, "r", encoding="latin-1") as file:
+        lines = file.readlines()
+
+    start_time, stop_time = None, None
+    for line in lines:
+        if line.startswith("Start time = "):
+            time_string = line.split(" = ", 1)[1].strip()
+            start_time = datetime.datetime.strptime(time_string, time_format)
+            start_time = start_time.replace(tzinfo=tz)
+        elif line.startswith("Stop time = "):
+            time_string = line.split(" = ", 1)[1].strip()
+            stop_time = datetime.datetime.strptime(time_string, time_format)
+            stop_time = stop_time.replace(tzinfo=tz)
+
+    if None in (start_time, stop_time):
+        raise ValueError(f"Could not find 'Start time' or 'Stop time' in file {info_txt_file}.")
+    
+    return start_time, stop_time
+
+
 def get_live_time_from_root(root_filename: str, channel: int) -> Tuple[float, float]:
     """
     Gets live and real count time from Compass root file.
@@ -1178,3 +1565,102 @@ def get_live_time_from_root(root_filename: str, channel: int) -> Tuple[float, fl
         live_count_time = root_file[f"LiveTime_{channel}"].members["fMilliSec"] / 1000
         real_count_time = root_file[f"RealTime_{channel}"].members["fMilliSec"] / 1000
     return live_count_time, real_count_time
+
+
+def get_live_time_from_info_txt(info_txt_file: Path, channel: int) -> Tuple[float, float]:
+    """
+    Gets live and real count time in seconds from Compass *_info.txt file.
+    Live time is defined as the difference between the actual time that
+    a count is occurring and the "dead time," in which the output of detector
+    pulses is saturated such that additional signals cannot be processed.
+    
+    Args:
+        info_txt_file: Path to the info.txt file
+        channel: Channel number (e.g., 0 for CH0@, 1 for CH1@)
+        
+    Returns:
+        Tuple of (live_count_time, real_count_time) in seconds
+    """
+    with open(info_txt_file, "r", encoding="latin-1") as file:
+        lines = file.readlines()
+
+    channel_header = f"CH{channel}@"
+    in_channel_section = False
+    live_count_time = None
+    real_count_time = None
+
+    for line in lines:
+        if line.startswith(channel_header):
+            in_channel_section = True
+            continue
+        elif in_channel_section and line.startswith("CH") and "@" in line:
+            # We've reached the next channel section, stop searching
+            break
+        elif in_channel_section:
+            if "Real time = " in line:
+                # Extract time string like "0:03:14.665"
+                match = re.search(r"Real time = (\d+:\d{2}:\d{2}\.\d+)", line)
+                if match:
+                    real_count_time = _parse_time_to_seconds(match.group(1))
+            if "Live time = " in line:
+                match = re.search(r"Live time = (\d+:\d{2}:\d{2}\.\d+)", line)
+                if match:
+                    live_count_time = _parse_time_to_seconds(match.group(1))
+        
+        if live_count_time is not None and real_count_time is not None:
+            break
+
+    if live_count_time is None or real_count_time is None:
+        raise ValueError(
+            f"Could not find Real time or Live time for channel {channel} in file {info_txt_file}."
+        )
+
+    return live_count_time, real_count_time
+
+
+def _parse_time_to_seconds(time_str: str) -> float:
+    """
+    Parse a time string in format "H:MM:SS.mmm" to seconds.
+    
+    Args:
+        time_str: Time string like "0:03:14.665"
+        
+    Returns:
+        Time in seconds as a float
+    """
+    parts = time_str.split(":")
+    hours = int(parts[0])
+    minutes = int(parts[1])
+    seconds = float(parts[2])
+    return hours * 3600 + minutes * 60 + seconds
+
+
+def get_spectrum_nbins(settings_file: str) -> int:
+    """
+    Read a settings.xml file and extract the number of spectrum bins
+    from the SRV_PARAM_CH_SPECTRUM_NBINS parameter.
+    
+    Args:
+        settings_file: Path to the settings.xml file
+        
+    Returns:
+        The number of bins as an integer (e.g., 16384 from "BINS_16384")
+    """
+    tree = ET.parse(settings_file)
+    root = tree.getroot()
+    
+    # Find entry with the matching key
+    for entry in root.iter('entry'):
+        key_elem = entry.find('key')
+        if key_elem is not None and key_elem.text == 'SRV_PARAM_CH_SPECTRUM_NBINS':
+            # Get the first value element (contains the actual value)
+            value_container = entry.find('value')
+            if value_container is not None:
+                value_elem = value_container.find('value')
+                if value_elem is not None and value_elem.text:
+                    # Extract number from "BINS_16384" format
+                    match = re.search(r'BINS_(\d+)', value_elem.text)
+                    if match:
+                        return int(match.group(1))
+    print(f"SRV_PARAM_CH_SPECTRUM_NBINS not found in settings file {settings_file}. Defaulting to None bins.")
+    return None

@@ -840,8 +840,8 @@ def get_calibration_data(
             )
             kwargs = {}
             if peak_kwargs is not None:
-                if measurement.check_source.nuclide in peak_kwargs.keys():
-                    kwargs = peak_kwargs[measurement.check_source.nuclide]
+                if measurement.check_source.nuclide.name in peak_kwargs.keys():
+                    kwargs = peak_kwargs[measurement.check_source.nuclide.name]
                     found_a_nuclide = True
 
             peaks_ind = measurement.get_peaks(hist, **kwargs)

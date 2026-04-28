@@ -821,6 +821,13 @@ class SampleMeasurement(Measurement):
 
         return flux
 
+def _get_nuclide_peak_kwargs(measurement: CheckSourceMeasurement, peak_kwargs: dict = None) -> dict:
+    kwargs = {}
+    if peak_kwargs is not None:
+        if measurement.check_source.nuclide.name in peak_kwargs.keys():
+            kwargs = peak_kwargs[measurement.check_source.nuclide.name]
+    return kwargs
+
 
 def get_calibration_data(
     check_source_measurements: List[CheckSourceMeasurement],
@@ -861,11 +868,9 @@ def get_calibration_data(
             hist, bin_edges = detector.get_energy_hist_background_substract(
                 background_detector, bins=None
             )
-            kwargs = {}
-            if peak_kwargs is not None:
-                if measurement.check_source.nuclide.name in peak_kwargs.keys():
-                    kwargs = peak_kwargs[measurement.check_source.nuclide.name]
-                    found_a_nuclide = True
+            kwargs = _get_nuclide_peak_kwargs(measurement, peak_kwargs)
+            if kwargs:
+                found_a_nuclide = True
 
             peaks_ind = measurement.get_peaks(hist, **kwargs)
             peaks = bin_edges[peaks_ind]

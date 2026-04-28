@@ -536,9 +536,9 @@ class CheckSourceMeasurement(Measurement):
         detection_efficiency = nb_counts_measured / expected_nb_counts
 
         return detection_efficiency
-
-    def get_peaks(self, hist: np.ndarray, **kwargs) -> np.ndarray:
-        """Returns the peak indices of the histogram
+    
+    def get_peak_fitting_parameters(self, hist: np.ndarray, **kwargs) -> Dict[str, Union[float, List[float]]]:
+        """Returns the peak fitting parameters for the given histogram and check source nuclide.
 
         Args:
             hist: a histogram
@@ -546,9 +546,8 @@ class CheckSourceMeasurement(Measurement):
                 see scipy.signal.find_peaks for more information
 
         Returns:
-            the peak indices in ``hist``
+            the peak fitting parameters
         """
-
         if self.detector_type.lower() == 'nai':
             # peak finding parameters
             start_index = 100
@@ -604,22 +603,46 @@ class CheckSourceMeasurement(Measurement):
 
         # update the parameters if kwargs are provided
         if kwargs:
+            print("Using custom peak finding parameters from kwargs: ", kwargs)
             start_index = kwargs.get("start_index", start_index)
             prominence = kwargs.get("prominence", prominence)
             height = kwargs.get("height", height)
             width = kwargs.get("width", width)
             distance = kwargs.get("distance", distance)
 
+        return {
+            "start_index": start_index,
+            "prominence": prominence,
+            "height": height,
+            "width": width,
+            "distance": distance
+        }
+
+    def get_peaks(self, hist: np.ndarray, **kwargs) -> np.ndarray:
+        """Returns the peak indices of the histogram
+
+        Args:
+            hist: a histogram
+            kwargs: optional parameters for the peak finding algorithm
+                see scipy.signal.find_peaks for more information
+
+        Returns:
+            the peak indices in ``hist``
+        """
+
+        # get the peak fitting parameters based on the check source nuclide and the detector type
+        peak_fitting_parameters = self.get_peak_fitting_parameters(hist, **kwargs)
+
         # run the peak finding algorithm
         # NOTE: the start_index is used to ignore the low energy region
         peaks, peak_data = find_peaks(
-            hist[start_index:],
-            prominence=prominence,
-            height=height,
-            width=width,
-            distance=distance,
+            hist[peak_fitting_parameters["start_index"]:],
+            prominence=peak_fitting_parameters["prominence"],
+            height=peak_fitting_parameters["height"],
+            width=peak_fitting_parameters["width"],
+            distance=peak_fitting_parameters["distance"],
         )
-        peaks = np.array(peaks) + start_index
+        peaks = np.array(peaks) + peak_fitting_parameters["start_index"]
 
         # special case for Mn-54, only keep the first high count energy peak
         if self.check_source.nuclide == mn54 and len(peaks) > 1:
@@ -798,6 +821,13 @@ class SampleMeasurement(Measurement):
 
         return flux
 
+def _get_nuclide_peak_kwargs(measurement: CheckSourceMeasurement, peak_kwargs: dict = None) -> dict:
+    kwargs = {}
+    if peak_kwargs is not None:
+        if measurement.check_source.nuclide.name in peak_kwargs.keys():
+            kwargs = peak_kwargs[measurement.check_source.nuclide.name]
+    return kwargs
+
 
 def get_calibration_data(
     check_source_measurements: List[CheckSourceMeasurement],
@@ -838,11 +868,9 @@ def get_calibration_data(
             hist, bin_edges = detector.get_energy_hist_background_substract(
                 background_detector, bins=None
             )
-            kwargs = {}
-            if peak_kwargs is not None:
-                if measurement.check_source.nuclide in peak_kwargs.keys():
-                    kwargs = peak_kwargs[measurement.check_source.nuclide]
-                    found_a_nuclide = True
+            kwargs = _get_nuclide_peak_kwargs(measurement, peak_kwargs)
+            if kwargs:
+                found_a_nuclide = True
 
             peaks_ind = measurement.get_peaks(hist, **kwargs)
             peaks = bin_edges[peaks_ind]

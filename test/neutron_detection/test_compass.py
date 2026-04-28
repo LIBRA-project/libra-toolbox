@@ -1724,3 +1724,79 @@ def test_get_peaks(detector_type, nuclide, signal_to_background_ratio):
     for test_energy, expected_energy in zip(test_peaks, nuclide.energy):
         print(f"Detected peak at {test_energy:.2f} keV, expected at {expected_energy} keV")
         assert np.isclose(test_energy, expected_energy, rtol=0.05)
+
+
+@pytest.mark.parametrize(
+    "detector_type, nuclide",
+    [
+        ("NaI", na22),
+        ("NaI", co60),
+        ("NaI", ba133),
+        ("NaI", mn54),
+        ("HPGe", na22),
+        ("HPGe", co60),
+        ("HPGe", ba133),
+        ("HPGe", mn54),
+    ],
+)
+def test_get_peak_fitting_parameters_with_kwargs(detector_type, nuclide):
+    """Test that kwargs properly override default parameters in get_peak_fitting_parameters."""
+    
+    # Create a test histogram (random values)
+    hist = np.random.rand(1000) * 100
+    hist[500:600] = np.random.rand(100) * 1000  # Add a peak
+    
+    # Create a CheckSourceMeasurement
+    check_source = CheckSource(
+        nuclide=nuclide,
+        activity_date=datetime.datetime(2024, 1, 1),
+        activity=1.0
+    )
+    
+    measurement = compass.CheckSourceMeasurement(name="test_measurement")
+    measurement.check_source = check_source
+    measurement.detector_type = detector_type
+    
+    # Test 1: Get default parameters (no kwargs)
+    default_params = measurement.get_peak_fitting_parameters(hist)
+    
+    # Check that all expected keys are present
+    assert "start_index" in default_params
+    assert "prominence" in default_params
+    assert "height" in default_params
+    assert "width" in default_params
+    assert "distance" in default_params
+    
+    # Test 2: Override with custom kwargs
+    custom_kwargs = {
+        "start_index": 200,
+        "prominence": 50.0,
+        "height": 75.0,
+        "width": [5, 100],
+        "distance": 50,
+    }
+    
+    custom_params = measurement.get_peak_fitting_parameters(hist, **custom_kwargs)
+    
+    # Verify all kwargs were applied
+    assert custom_params["start_index"] == 200, "start_index kwarg not applied"
+    assert custom_params["prominence"] == 50.0, "prominence kwarg not applied"
+    assert custom_params["height"] == 75.0, "height kwarg not applied"
+    assert custom_params["width"] == [5, 100], "width kwarg not applied"
+    assert custom_params["distance"] == 50, "distance kwarg not applied"
+    
+    # Test 3: Partial kwargs override (some default, some custom)
+    partial_kwargs = {
+        "start_index": 300,
+        "height": 100.0,
+    }
+    
+    partial_params = measurement.get_peak_fitting_parameters(hist, **partial_kwargs)
+    
+    # Verify partial overrides work
+    assert partial_params["start_index"] == 300, "partial start_index kwarg not applied"
+    assert partial_params["height"] == 100.0, "partial height kwarg not applied"
+    # Other parameters should remain as defaults
+    assert partial_params["prominence"] == default_params["prominence"], "Other params should not change"
+    assert partial_params["width"] == default_params["width"], "Other params should not change"
+    assert partial_params["distance"] == default_params["distance"], "Other params should not change"

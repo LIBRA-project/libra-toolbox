@@ -33,6 +33,7 @@ def test_get_channel(filename, expected_channel):
     assert ch == expected_channel
 
 
+
 def create_empty_csv_files(directory, base_name, count, channel):
     """
     Creates empty CSV files in a specified directory with a specific pattern.
@@ -1726,6 +1727,29 @@ def test_get_peaks(detector_type, nuclide, signal_to_background_ratio):
         assert np.isclose(test_energy, expected_energy, rtol=0.05)
 
 
+@pytest.mark.parametrize(
+    "peak_kwargs, expected",
+    [
+        (None, {}),
+        ({na22.name: {"start_index": 123, "height": 4.5},
+          co60.name: {"start_index": 456, "height": 7.8}}, 
+          {"start_index": 123, "height": 4.5}),
+        ({co60.name: {"distance": 99}}, {}),
+    ],
+)
+def test_get_nuclide_peak_kwargs(peak_kwargs, expected):
+    measurement = compass.CheckSourceMeasurement("test")
+    measurement.check_source = CheckSource(
+        nuclide=na22,
+        activity_date=datetime.datetime(2024, 1, 1),
+        activity=1.0,
+    )
+
+    result = compass._get_nuclide_peak_kwargs(measurement, peak_kwargs)
+
+    assert result == expected
+
+    
 @pytest.mark.parametrize(
     "detector_type, nuclide",
     [

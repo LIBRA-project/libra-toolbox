@@ -251,6 +251,14 @@ Flibe_nat.add_nuclide("Li7", 0.264029, "ao")
 Flibe_nat.add_element("F", 0.571429, "ao")
 Flibe_nat.set_density("g/cm3", 1.94)
 
+Flibe_solid = openmc.Material(name="Flibe_solid")
+# Flibe_nat.temperature = 700 + 273
+Flibe_solid.add_element("Be", 0.142857, "ao")
+Flibe_solid.add_nuclide("Li6", 0.021685, "ao")
+Flibe_solid.add_nuclide("Li7", 0.264029, "ao")
+Flibe_solid.add_element("F", 0.571429, "ao")
+Flibe_solid.set_density("g/cm3", 2.18)
+
 Copper = openmc.Material(name="Copper")
 # Estimate copper temperature to be around 100 C
 # Copper.temperature = 100 + 273

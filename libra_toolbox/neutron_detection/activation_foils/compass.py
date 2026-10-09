@@ -662,7 +662,70 @@ class SampleMeasurement(Measurement):
         channel_nb: int,
         search_width: float = 800,
         summing_method: str = 'sum_gaussian',
+        efficiency_function = None,
+        efficiency_function_args: list = None
     ):
+        """
+        Estimate the emitted gamma-ray counts for the foil product nuclide.
+
+        This method performs background-subtracted peak area extraction in the
+        specified detector channel, converts the measured energy scale using the
+        supplied calibration polynomial, and divides the measured peak counts by
+        the detector efficiency to estimate the total emitted gamma rays.
+
+        Parameters
+        ----------
+        background_measurement : Measurement
+            The background measurement used to subtract the continuum and
+            environmental counts from the sample spectrum.
+        efficiency_coeffs : array-like
+            Polynomial coefficients defining the detector efficiency as a
+            function of energy, used with ``np.polyval(efficiency_coeffs, energy)``
+            when no custom efficiency function is provided.
+        calibration_coeffs : array-like
+            Polynomial coefficients used to convert raw detector channels to
+            calibrated energies before peak integration.
+        channel_nb : int
+            Detector channel number to analyze.
+        search_width : float, optional
+            Width, in energy units, used to search for and fit the product peak.
+            Default is 800.
+        summing_method : str, optional
+            Peak-summing strategy passed to ``get_multipeak_area``. Supported
+            values include ``'sum_gaussian'`` and ``'sum_histogram'``. Default is
+            ``'sum_gaussian'``.
+        efficiency_function : callable, optional
+            Custom function that evaluates detector efficiency as a function of
+            energy. If provided, it is used instead of the polynomial
+            efficiency coefficients provided in ``efficiency_coeffs``. 
+            This is useful when efficiency is known from
+            calibration data or a fitted model instead of a simple polynomial.
+        efficiency_function_args : list, optional
+            Additional keyword arguments to pass to ``efficiency_function`` if
+            it requires extra parameters.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            A pair ``(gamma_emmitted, gamma_emmitted_err)`` containing the
+            estimated emitted gamma-ray counts and their propagated uncertainty.
+
+        Notes
+        -----
+        The effective detection efficiency is determined as follows:
+
+        - If ``efficiency_function`` is not ``None``, then
+          ``detection_efficiency = efficiency_function(energy, **efficiency_function_kwargs)``.
+        - Otherwise, ``detection_efficiency = np.polyval(efficiency_coeffs, energy)``.
+
+        The quantity returned is therefore:
+
+        gamma_emmitted = nb_counts_measured / detection_efficiency
+
+        where ``nb_counts_measured`` is the background-subtracted counts under
+        the expected product gamma peak(s).
+        """
+        
         # find right background detector
 
         background_detector = background_measurement.get_detector(channel_nb)
@@ -687,7 +750,12 @@ class SampleMeasurement(Measurement):
         nb_counts_measured = np.array(nb_counts_measured)
         nb_counts_measured_err = np.sqrt(nb_counts_measured)
 
-        detection_efficiency = np.polyval(efficiency_coeffs, energy)
+        # check if there is an efficiency function provided, if so use it to get the detection efficiency
+        if efficiency_function is not None:
+            detection_efficiency = efficiency_function(energy, *efficiency_function_args)
+        else:
+            # otherwise, just use the polynomial coefficients to get the detection efficiency
+            detection_efficiency = np.polyval(efficiency_coeffs, energy)
 
         gamma_emmitted = nb_counts_measured / detection_efficiency
         gamma_emmitted_err = nb_counts_measured_err / detection_efficiency

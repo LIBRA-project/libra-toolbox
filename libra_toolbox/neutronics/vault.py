@@ -9,6 +9,10 @@ def build_vault_model(
     """
     Builds a complete OpenMC model for a simulation setup representing a
     shielding system for MIT Vault Laboratory.
+    
+    .. image:: ../../docs/_static/vault.png
+       :alt: Descriptive text for the image
+       :align: center
 
     Parameters:
     ----------
@@ -48,6 +52,8 @@ def build_vault_model(
       for neutrons using the `openmc_data_downloader` library.
     - If an `overall_exclusion_region` is provided, it will be incorporated
       to exclude specific parts of the geometry.
+    - The model's origin point (0.0, 0.0, 0.0) is located at the bottom right 
+      corner when entering the vault room.
     """
 
     # optional dependency

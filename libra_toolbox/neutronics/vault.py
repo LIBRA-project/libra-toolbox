@@ -1,8 +1,83 @@
+def _make_assembly_placement(
+    assembly,
+    position,
+    rotation=(0.0, 0.0, 0.0),
+    envelope_radius=30.0,
+):
+    """
+    Create a transformed placement cell for an assembly.
+
+    Parameters
+    ----------
+    assembly
+        Object exposing ``geometry()`` and ``name``.
+    position : tuple[float, float, float]
+        Global (x, y, z) location in cm of the assembly's local origin.
+    rotation : tuple[float, float, float]
+        OpenMC Euler rotation angles in degrees.
+    envelope_radius : float
+        Radius in cm of a spherical envelope around the assembly, measured
+        from its local origin. Must enclose every cell in the assembly.
+
+    Returns
+    -------
+    placement_cell, exclusion_region, assembly_materials
+        The parent cell to add to the room, the matching global spherical
+        region to exclude from the room air, and materials used by the assembly.
+    """
+    import openmc
+
+    local_cells = assembly.geometry()
+
+    # A sphere is used as the placement envelope because it remains unchanged
+    # by rotation. The local void cell fills the envelope around the components.
+    local_envelope = -openmc.Sphere(r=envelope_radius)
+    background_region = local_envelope
+
+    assembly_materials = []
+    for cell in local_cells:
+        background_region &= ~cell.region
+        if isinstance(cell.fill, openmc.Material):
+            if cell.fill not in assembly_materials:
+                assembly_materials.append(cell.fill)
+
+    background_cell = openmc.Cell(
+        name=f"{assembly.name}_PlacementBackground",
+        fill=None,
+        region=background_region,
+    )
+
+    assembly_universe = openmc.Universe(
+        name=f"{assembly.name}_Universe",
+        cells=local_cells + [background_cell],
+    )
+
+    x, y, z = position
+    global_envelope = openmc.Sphere(
+        x0=x,
+        y0=y,
+        z0=z,
+        r=envelope_radius,
+    )
+
+    placement_cell = openmc.Cell(
+        name=f"{assembly.name}_Placement",
+        fill=assembly_universe,
+        region=-global_envelope,
+    )
+
+    placement_cell.translation = position
+    placement_cell.rotation = rotation
+
+    return placement_cell, -global_envelope, assembly_materials
+
+
 def build_vault_model(
     settings=None,
     tallies=None,
-    added_cells=[],
-    added_materials=[],
+    added_cells=None,
+    added_materials=None,
+    experiment_placements=None,
     overall_exclusion_region=None,
     cross_sections_destination="cross_sections",
 ) -> "openmc.model.Model":
@@ -21,12 +96,18 @@ def build_vault_model(
         during the simulation. Default is an empty object.
 
     added_cells : list of openmc.Cell, optional
-        A list of additional cells to include in the geometry.
-        Useful for extending the model with custom objects.
+        Additional cells already expressed in the room's global coordinates.
+        Use ``experiment_placements`` for assemblies that need positioning.
 
     added_materials : list of openmc.Material, optional
-        A list of additional materials to include in the model.
-        This allows for the inclusion of non-default materials.
+        Additional materials to include in the model.
+
+    experiment_placements : list of dict, optional
+        Assembly placements. Each dict contains ``assembly`` and ``position``,
+        with optional ``rotation`` and ``envelope_radius`` keys. Position is
+        (x, y, z) in cm; rotation is (x, y, z) in degrees. Each assembly is
+        wrapped in a spherical placement envelope, which is excluded from the
+        room air automatically.
 
     overall_exclusion_region : openmc.Region, optional
         An optional region that defines areas to exclude in the construction
@@ -59,7 +140,36 @@ def build_vault_model(
         raise ModuleNotFoundError(
             "openmc and openmc_data_downloader are required.")
 
-    from .materials import Aluminum, Air, Concrete, IronConcrete, RicoRad, SS304, Copper
+    from materials import Aluminum, Air, Concrete, IronConcrete, RicoRad, SS304, Copper
+
+    # Avoid mutable default arguments and prepare any transformed assemblies.
+    added_cells = list(added_cells or [])
+    added_materials = list(added_materials or [])
+    experiment_placements = list(experiment_placements or [])
+
+    placement_cells = []
+    placement_exclusion_regions = []
+    for placement in experiment_placements:
+        placement_cell, exclusion_region, placement_materials = (
+            _make_assembly_placement(
+                assembly=placement["assembly"],
+                position=placement["position"],
+                rotation=placement.get("rotation", (0.0, 0.0, 0.0)),
+                envelope_radius=placement.get("envelope_radius", 30.0),
+            )
+        )
+        placement_cells.append(placement_cell)
+        placement_exclusion_regions.append(exclusion_region)
+        added_materials.extend(placement_materials)
+
+    # Combine the placement envelopes with any caller-supplied exclusion region.
+    for exclusion_region in placement_exclusion_regions:
+        if overall_exclusion_region is None:
+            overall_exclusion_region = exclusion_region
+        else:
+            overall_exclusion_region = (
+                overall_exclusion_region | exclusion_region
+            )
 
     materials = openmc.Materials(
         [
@@ -447,6 +557,7 @@ def build_vault_model(
     ]
 
     Cells += added_cells
+    Cells += placement_cells
 
     Universe_1 = openmc.Universe(cells=Cells)
     geometry = openmc.Geometry(Universe_1)

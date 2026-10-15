@@ -56,6 +56,19 @@ Alumina.add_element("O", 0.6, "ao")
 Alumina.add_element("Al", 0.4, "ao")
 Alumina.set_density("g/cm3", 3.98)
 
+# Macor ceramic - for insulation tiles on top of 1L crucible
+macor = openmc.Material(name='Macor Ceramic')
+# Set the material density to 2.52 g/cm³
+macor.set_density('g/cm3', 2.52)
+# Add the elemental components by weight percent ('wo')
+macor.add_element('Si', 21.50, percent_type='wo') # From ~46% SiO2
+macor.add_element('Mg', 10.25, percent_type='wo') # From ~17% MgO
+macor.add_element('Al', 8.47,  percent_type='wo') # From ~16% Al2O3
+macor.add_element('K',  8.30,  percent_type='wo') # From ~10% K2O
+macor.add_element('B',  2.17,  percent_type='wo') # From ~7% B2O3
+macor.add_element('O',  45.31, percent_type='wo') # Combined Oxygen from oxides
+macor.add_element('F',  4.00,  percent_type='wo') # Fluorine
+
 # epoxy
 Epoxy = openmc.Material(name="Epoxy")
 Epoxy.add_element("C", 0.70, "wo")

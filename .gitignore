@@ -166,3 +166,7 @@ cython_debug/
 # Compass binary file
 *.DS_Store
 settings.xml
+
+# Openmc files
+*.xml
+*.pkl

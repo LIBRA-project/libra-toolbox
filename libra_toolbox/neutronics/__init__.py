@@ -3,5 +3,6 @@ from .vault import *
 
 try:
     from . import materials
+    from . import components
 except ModuleNotFoundError:
     pass
